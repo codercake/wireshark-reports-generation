@@ -1,0 +1,67 @@
+/* Main styles */
+body {
+  font-family: 'Inter', sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: #f8fafc;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: #1f2937;
+}
+
+button {
+  cursor: pointer;
+  font-size: 16px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: none;
+  background-color: #6366f1;
+  color: #fff;
+  transition: background-color 0.3s ease;
+}
+
+button:hover {
+  background-color: #4f46e5;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 20px 0;
+  font-size: 16px;
+  text-align: left;
+}
+
+th, td {
+  padding: 10px;
+  border-bottom: 1px solid #ddd;
+}
+
+th {
+  background-color: #6366f1;
+  color: #fff;
+}
+
+.sidebar {
+  height: 100vh;
+  width: 250px;
+  background-color: #1f2937;
+  color: #fff;
+  position: fixed;
+  top: 0;
+  left: 0;
+  padding: 20px;
+}
+
+.sidebar a {
+  color: #fff;
+  text-decoration: none;
+  font-size: 18px;
+  margin-bottom: 15px;
+  display: block;
+}
+
+.sidebar a:hover {
+  color: #6366f1;
+}
