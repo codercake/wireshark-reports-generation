@@ -1,11 +1,12 @@
 const Packet = require('../models/Packet');
 
+//implementing pagination for the `getPackets` methods to handle large datasets
 exports.getPackets = async (req, res) => {
     try {
         const packets = await Packet.find().sort('-timestamp').limit(100);
-        res.json(packets);
+        res.json({ success: true, data: packets });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ success: false, error: error.message });
     }
 };
 

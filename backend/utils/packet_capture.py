@@ -2,9 +2,10 @@ import pyshark
 import json
 from datetime import datetime
 import pymongo
+import os
 
 def connect_db():
-    MONGO_URI = "mongodb+srv://wireshark:root098@wireshark-reports.q5bhj.mongodb.net/?retryWrites=true&w=majority&appName=wireshark-reports"
+    MONGO_URI = os.getenv("MONGO_URI")
     client = pymongo.MongoClient(MONGO_URI)
     return client.wireshark_db
 
@@ -20,7 +21,7 @@ def capture_packets():
                 'protocol': packet.transport_layer,
                 'source_ip': packet.ip.src,
                 'dest_ip': packet.ip.dst,
-                'length': int(packet.length)
+                'length': int(packet.length),
             }
             packets_collection.insert_one(packet_data)
             print(json.dumps(packet_data, default=str))
