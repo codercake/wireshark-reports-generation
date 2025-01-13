@@ -1,15 +1,62 @@
+// src/App.jsx
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { GoogleOAuthProvider } from '@react-oauth/google';
+import { ThemeProvider, createTheme } from '@mui/material';
+import CssBaseline from '@mui/material/CssBaseline';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import axios from 'axios';
+import Header from './components/Header';
+import Footer from './components/Footer';
+import Home from './components/Home';
+import Login from './components/Login';
+import Register from './components/Register';
 import Dashboard from './components/Dashboard';
 import PacketTable from './components/PacketTable';
+
+const theme = createTheme({
+  palette: {
+    primary: {
+      main: '#667eea',
+    },
+    secondary: {
+      main: '#764ba2',
+    },
+  },
+  typography: {
+    fontFamily: '"Poppins", "Roboto", "Helvetica", "Arial", sans-serif',
+    button: {
+      textTransform: 'none',
+    },
+  },
+  components: {
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          borderRadius: 8,
+          padding: '10px 20px',
+        },
+      },
+    },
+    MuiTextField: {
+      styleOverrides: {
+        root: {
+          '& .MuiOutlinedInput-root': {
+            borderRadius: 8,
+          },
+        },
+      },
+    },
+  },
+});
 
 function App() {
     const [packets, setPackets] = useState([]);
     const [isCapturing, setIsCapturing] = useState(false);
     const [stats, setStats] = useState({
         totalPackets: 0,
-        protocols: []
+        totalBytes: 0,
+        packetsPerSec: 0
     });
 
     const startCapture = async () => {
@@ -21,41 +68,41 @@ function App() {
         }
     };
 
-    const fetchStats = async () => {
-        try {
-            const response = await axios.get('http://localhost:5001/api/stats');
-            setStats(response.data);
-        } catch (error) {
-            console.error('Error fetching stats:', error);
-        }
-    };
-
     useEffect(() => {
-        const fetchPackets = async () => {
-            if (isCapturing) {
-                try {
-                    const response = await axios.get('http://localhost:5001/api/reports');
-                    setPackets(response.data);
-                    fetchStats();
-                } catch (error) {
-                    console.error('Error fetching packets:', error);
-                }
+        const fetchStats = async () => {
+            try {
+                const response = await axios.get('http://localhost:5001/api/stats');
+                setStats(response.data);
+            } catch (error) {
+                console.error('Error fetching stats:', error);
             }
         };
 
-        const interval = setInterval(fetchPackets, 5000);
+        const interval = setInterval(fetchStats, 5000);
         return () => clearInterval(interval);
     }, [isCapturing]);
 
     return (
-        <div className="App">
-            <Dashboard 
-                stats={stats}
-                isCapturing={isCapturing}
-                startCapture={startCapture}
-            />
-            <PacketTable packets={packets} />
-        </div>
+        <GoogleOAuthProvider clientId="YOUR_GOOGLE_CLIENT_ID">
+            <ThemeProvider theme={theme}>
+                <CssBaseline />
+                <Router>
+                    <div className="app-container">
+                        <Header />
+                        <main className="main-content">
+                            <Routes>
+                                <Route path="/" element={<Home />} />
+                                <Route path="/login" element={<Login />} />
+                                <Route path="/register" element={<Register />} />
+                                <Route path="/dashboard" element={<Dashboard packets={packets} stats={stats} />} />
+                                <Route path="/packets" element={<PacketTable packets={packets} />} />
+                            </Routes>
+                        </main>
+                        <Footer />
+                    </div>
+                </Router>
+            </ThemeProvider>
+        </GoogleOAuthProvider>
     );
 }
 
