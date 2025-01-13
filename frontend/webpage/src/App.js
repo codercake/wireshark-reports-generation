@@ -1,18 +1,32 @@
-// src/App.jsx
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { ThemeProvider, createTheme } from '@mui/material';
 import CssBaseline from '@mui/material/CssBaseline';
+import styled from '@emotion/styled';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import axios from 'axios';
-import Header from './components/Header';
+
+import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import Home from './components/Home';
 import Login from './components/Login';
 import Register from './components/Register';
 import Dashboard from './components/Dashboard';
 import PacketTable from './components/PacketTable';
+import Reports from './components/Reports';
+import Profile from './components/Profile';
+
+const AppWrapper = styled.div`
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+`;
+
+const MainContent = styled.main`
+  flex: 1;
+  padding-top: 64px; // Height of navbar
+`;
 
 const theme = createTheme({
   palette: {
@@ -87,19 +101,31 @@ function App() {
             <ThemeProvider theme={theme}>
                 <CssBaseline />
                 <Router>
-                    <div className="app-container">
-                        <Header />
-                        <main className="main-content">
+                    <AppWrapper>
+                        <Navbar />
+                        <MainContent>
                             <Routes>
                                 <Route path="/" element={<Home />} />
                                 <Route path="/login" element={<Login />} />
                                 <Route path="/register" element={<Register />} />
-                                <Route path="/dashboard" element={<Dashboard packets={packets} stats={stats} />} />
+                                <Route 
+                                    path="/dashboard" 
+                                    element={
+                                        <Dashboard 
+                                            packets={packets} 
+                                            stats={stats}
+                                            isCapturing={isCapturing}
+                                            startCapture={startCapture}
+                                        />
+                                    } 
+                                />
+                                <Route path="/reports" element={<Reports />} />
+                                <Route path="/profile" element={<Profile />} />
                                 <Route path="/packets" element={<PacketTable packets={packets} />} />
                             </Routes>
-                        </main>
+                        </MainContent>
                         <Footer />
-                    </div>
+                    </AppWrapper>
                 </Router>
             </ThemeProvider>
         </GoogleOAuthProvider>
