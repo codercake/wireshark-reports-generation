@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { spawn } = require('child_process');
+const { startCapture, generateReport } = require('../controllers/packetController');
 const Packet = require('../models/Packet');
 
 let captureProcess = null;
@@ -60,5 +61,8 @@ router.get('/protocols', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
+router.post('/capture', startCapture);
+router.post('/report', generateReport);
 
 module.exports = router;
