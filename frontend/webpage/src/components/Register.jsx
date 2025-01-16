@@ -21,51 +21,20 @@ const Register = () => {
         email: '',
         password: '',
         confirmPassword: '',
+        submit: ''
     });
 
-    const validateUsername = (username) => {
-        return username.length >= 3;
-    };
-
-    const validateEmail = (email) => {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        return emailRegex.test(email);
-    };
-
-    const validatePassword = (password) => {
-        const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,}$/;
-        return passwordRegex.test(password);
-    };
-
-    const getPasswordStrength = (password) => {
-        if (password.length === 0) return '';
-        if (password.length < 8) return 'Too Short';
-        
-        let strength = 0;
-        if (/[A-Z]/.test(password)) strength++;
-        if (/[a-z]/.test(password)) strength++;
-        if (/\d/.test(password)) strength++;
-        if (/[@$!%*#?&]/.test(password)) strength++;
-
-        if (strength === 4) return 'Strong';
-        if (strength === 3) return 'Medium';
-        return 'Weak';
-    };
-
-    const handleInputChange = (field, value) => {
-        setFormData({ ...formData, [field]: value });
-        
+    const validateField = (field, value) => {
         const newErrors = { ...errors };
-
         switch (field) {
             case 'username':
-                newErrors.username = validateUsername(value) ? '' : 'Username must be at least 3 characters';
+                newErrors.username = value.length >= 3 ? '' : 'Username must be at least 3 characters';
                 break;
             case 'email':
-                newErrors.email = validateEmail(value) ? '' : 'Please enter a valid email address';
+                newErrors.email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? '' : 'Invalid email format';
                 break;
             case 'password':
-                newErrors.password = validatePassword(value) ? '' : 'Password must be 8+ characters with letters, numbers, and special characters';
+                newErrors.password = value.length >= 6 ? '' : 'Password must be at least 6 characters';
                 if (formData.confirmPassword) {
                     newErrors.confirmPassword = value === formData.confirmPassword ? '' : 'Passwords do not match';
                 }
@@ -76,35 +45,24 @@ const Register = () => {
             default:
                 break;
         }
-
         setErrors(newErrors);
+    };
+
+    const handleInputChange = (field, value) => {
+        setFormData({ ...formData, [field]: value });
+        validateField(field, value);
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        
-        //Validate all fields
-        const validationErrors = {
-            username: validateUsername(formData.username) ? '' : 'Username is required',
-            email: validateEmail(formData.email) ? '' : 'Valid email is required',
-            password: validatePassword(formData.password) ? '' : 'Valid password is required',
-            confirmPassword: formData.password === formData.confirmPassword ? '' : 'Passwords must match'
-        };
-
-        setErrors(validationErrors);
-
-        if (Object.values(validationErrors).some(error => error !== '')) {
+        if (Object.values(errors).some(error => error !== '')) {
             return;
         }
-
         try {
             await createUserWithEmailAndPassword(auth, formData.email, formData.password);
             navigate('/dashboard');
         } catch (error) {
-            setErrors({
-                ...errors,
-                submit: error.message
-            });
+            setErrors({ ...errors, submit: error.message });
         }
     };
 
@@ -113,19 +71,8 @@ const Register = () => {
             await signInWithPopup(auth, googleProvider);
             navigate('/dashboard');
         } catch (error) {
-            setErrors({
-                ...errors,
-                submit: error.message
-            });
+            setErrors({ ...errors, submit: error.message });
         }
-    };
-
-    const passwordStrength = getPasswordStrength(formData.password);
-    const passwordStrengthColor = {
-        'Strong': 'green',
-        'Medium': 'orange',
-        'Weak': 'red',
-        'Too Short': 'red'
     };
 
     return (
@@ -134,7 +81,7 @@ const Register = () => {
             justifyContent: 'center',
             alignItems: 'center',
             minHeight: '100vh',
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            background: '#000000',
         }}>
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
@@ -146,14 +93,15 @@ const Register = () => {
                     borderRadius: 2,
                     width: '100%',
                     maxWidth: 400,
-                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.2)',
+                    boxShadow: '0 4px 20px rgba(255, 255, 255, 0.1)',
+                    backgroundColor: '#ffffff',
                 }}>
-                    <Typography variant="h4" align="center" gutterBottom>
+                    <Typography variant="h4" align="center" gutterBottom sx={{ color: '#000000' }}>
                         Create Account
                     </Typography>
                     <form onSubmit={handleSubmit}>
                         <Box sx={{ position: 'relative', mb: 3 }}>
-                            <FaUser style={{ position: 'absolute', top: 12, left: 12, color: '#667eea' }} />
+                            <FaUser style={{ position: 'absolute', top: 12, left: 12, color: '#000000' }} />
                             <TextField
                                 fullWidth
                                 label="Username"
@@ -162,12 +110,22 @@ const Register = () => {
                                 onChange={(e) => handleInputChange('username', e.target.value)}
                                 error={!!errors.username}
                                 helperText={errors.username}
-                                sx={{ '& .MuiOutlinedInput-root': { pl: 5 } }}
+                                sx={{ 
+                                    '& .MuiOutlinedInput-root': { 
+                                        pl: 5,
+                                        '&.Mui-focused fieldset': {
+                                            borderColor: '#000000',
+                                        },
+                                    },
+                                    '& label.Mui-focused': {
+                                        color: '#000000',
+                                    },
+                                }}
                             />
                         </Box>
 
                         <Box sx={{ position: 'relative', mb: 3 }}>
-                            <FaEnvelope style={{ position: 'absolute', top: 12, left: 12, color: '#667eea' }} />
+                            <FaEnvelope style={{ position: 'absolute', top: 12, left: 12, color: '#000000' }} />
                             <TextField
                                 fullWidth
                                 label="Email"
@@ -176,12 +134,22 @@ const Register = () => {
                                 onChange={(e) => handleInputChange('email', e.target.value)}
                                 error={!!errors.email}
                                 helperText={errors.email}
-                                sx={{ '& .MuiOutlinedInput-root': { pl: 5 } }}
+                                sx={{ 
+                                    '& .MuiOutlinedInput-root': { 
+                                        pl: 5,
+                                        '&.Mui-focused fieldset': {
+                                            borderColor: '#000000',
+                                        },
+                                    },
+                                    '& label.Mui-focused': {
+                                        color: '#000000',
+                                    },
+                                }}
                             />
                         </Box>
 
                         <Box sx={{ position: 'relative', mb: 3 }}>
-                            <FaLock style={{ position: 'absolute', top: 12, left: 12, color: '#667eea' }} />
+                            <FaLock style={{ position: 'absolute', top: 12, left: 12, color: '#000000' }} />
                             <TextField
                                 fullWidth
                                 label="Password"
@@ -191,17 +159,22 @@ const Register = () => {
                                 onChange={(e) => handleInputChange('password', e.target.value)}
                                 error={!!errors.password}
                                 helperText={errors.password}
-                                sx={{ '& .MuiOutlinedInput-root': { pl: 5 } }}
+                                sx={{ 
+                                    '& .MuiOutlinedInput-root': { 
+                                        pl: 5,
+                                        '&.Mui-focused fieldset': {
+                                            borderColor: '#000000',
+                                        },
+                                    },
+                                    '& label.Mui-focused': {
+                                        color: '#000000',
+                                    },
+                                }}
                             />
-                            {formData.password && (
-                                <FormHelperText sx={{ color: passwordStrengthColor[passwordStrength] }}>
-                                    Password Strength: {passwordStrength}
-                                </FormHelperText>
-                            )}
                         </Box>
 
                         <Box sx={{ position: 'relative', mb: 3 }}>
-                            <FaLock style={{ position: 'absolute', top: 12, left: 12, color: '#667eea' }} />
+                            <FaLock style={{ position: 'absolute', top: 12, left: 12, color: '#000000' }} />
                             <TextField
                                 fullWidth
                                 label="Confirm Password"
@@ -211,16 +184,35 @@ const Register = () => {
                                 onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
                                 error={!!errors.confirmPassword}
                                 helperText={errors.confirmPassword}
-                                sx={{ '& .MuiOutlinedInput-root': { pl: 5 } }}
+                                sx={{ 
+                                    '& .MuiOutlinedInput-root': { 
+                                        pl: 5,
+                                        '&.Mui-focused fieldset': {
+                                            borderColor: '#000000',
+                                        },
+                                    },
+                                    '& label.Mui-focused': {
+                                        color: '#000000',
+                                    },
+                                }}
                             />
                         </Box>
+
+                        {errors.submit && (
+                            <FormHelperText error>{errors.submit}</FormHelperText>
+                        )}
 
                         <Button
                             fullWidth
                             variant="contained"
                             type="submit"
-                            disabled={Object.values(errors).some(error => error !== '')}
-                            sx={{ mb: 2, backgroundColor: '#764ba2', '&:hover': { backgroundColor: '#667eea' } }}
+                            sx={{ 
+                                mb: 2, 
+                                backgroundColor: '#000000', 
+                                '&:hover': { 
+                                    backgroundColor: '#333333' 
+                                },
+                            }}
                         >
                             Register
                         </Button>
@@ -232,22 +224,30 @@ const Register = () => {
                                 fullWidth
                                 startIcon={<FcGoogle size={20} />}
                                 sx={{
-                                    borderColor: '#764ba2',
-                                    color: '#764ba2',
-                                    '&:hover': { borderColor: '#667eea', color: '#667eea' },
-                                    display: 'flex',
-                                    gap: 1,
-                                    alignItems: 'center',
-                                    justifyContent: 'center'
+                                    borderColor: '#000000',
+                                    color: '#000000',
+                                    '&:hover': { 
+                                        borderColor: '#333333', 
+                                        color: '#333333',
+                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                    },
                                 }}
                             >
                                 Sign up with Google
                             </Button>
                         </Box>
 
-                        <Typography align="center">
+                        <Typography align="center" sx={{ color: '#000000' }}>
                             Already have an account?{' '}
-                            <Button onClick={() => navigate('/login')} sx={{ color: '#764ba2' }}>
+                            <Button 
+                                onClick={() => navigate('/login')} 
+                                sx={{ 
+                                    color: '#000000',
+                                    '&:hover': {
+                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                    }
+                                }}
+                            >
                                 Login
                             </Button>
                         </Typography>

@@ -8,45 +8,45 @@ const Reports = () => {
     datasets: [{
       label: 'Network Traffic',
       data: [65, 59, 80, 81, 56, 55],
-      borderColor: '#4f46e5',
-      tension: 0.4
+      borderColor: 'rgb(75, 192, 192)',
+      tension: 0.1
     }]
   };
 
   return (
-    <Container fluid className="p-4">
-      <h1 className="mb-4">Network Analysis Reports</h1>
+    <Container fluid className="p-4" style={{ backgroundColor: '#f8fafc' }}>
+      <h1 className="mb-4" style={{ color: '#1e293b' }}>Network Analysis Reports</h1>
       
       <Row className="mb-4">
         <Col md={6}>
-          <Card className="report-card h-100">
+          <Card className="shadow-sm">
             <Card.Body>
-              <Card.Title>Monthly Traffic Overview</Card.Title>
+              <Card.Title style={{ color: '#334155' }}>Monthly Traffic Overview</Card.Title>
               <Line data={monthlyData} />
             </Card.Body>
           </Card>
         </Col>
         
         <Col md={6}>
-          <Card className="report-card h-100">
+          <Card className="shadow-sm">
             <Card.Body>
-              <Card.Title>Key Metrics</Card.Title>
-              <div className="metrics-grid">
-                <div className="metric-item">
-                  <h3>2.4TB</h3>
-                  <p>Total Data Transferred</p>
+              <Card.Title style={{ color: '#334155' }}>Key Metrics</Card.Title>
+              <div className="d-flex justify-content-around text-center">
+                <div>
+                  <h3 style={{ color: '#0ea5e9' }}>2.4TB</h3>
+                  <p style={{ color: '#64748b' }}>Total Data</p>
                 </div>
-                <div className="metric-item">
-                  <h3>45K</h3>
-                  <p>Total Packets</p>
+                <div>
+                  <h3 style={{ color: '#0ea5e9' }}>45K</h3>
+                  <p style={{ color: '#64748b' }}>Total Packets</p>
                 </div>
-                <div className="metric-item">
-                  <h3>99.9%</h3>
-                  <p>Network Uptime</p>
+                <div>
+                  <h3 style={{ color: '#0ea5e9' }}>99.9%</h3>
+                  <p style={{ color: '#64748b' }}>Network Uptime</p>
                 </div>
-                <div className="metric-item">
-                  <h3>12ms</h3>
-                  <p>Average Latency</p>
+                <div>
+                  <h3 style={{ color: '#0ea5e9' }}>12ms</h3>
+                  <p style={{ color: '#64748b' }}>Avg Latency</p>
                 </div>
               </div>
             </Card.Body>
@@ -56,20 +56,27 @@ const Reports = () => {
 
       <Row>
         <Col>
-          <Card className="report-card">
+          <Card className="shadow-sm">
             <Card.Body>
-              <Card.Title>Recent Reports</Card.Title>
-              <div className="reports-list">
-                {[1, 2, 3].map((report) => (
-                  <div key={report} className="report-item">
-                    <div className="report-info">
-                      <h4>Network Analysis Report #{report}</h4>
-                      <p>Generated on {new Date().toLocaleDateString()}</p>
-                    </div>
-                    <button className="download-btn">Download PDF</button>
+              <Card.Title style={{ color: '#334155' }}>Recent Reports</Card.Title>
+              {[1, 2, 3].map((report) => (
+                <div key={report} className="d-flex justify-content-between align-items-center p-3 border-bottom">
+                  <div>
+                    <h5 style={{ color: '#334155' }}>Network Analysis Report #{report}</h5>
+                    <p style={{ color: '#64748b' }}>{new Date().toLocaleDateString()}</p>
                   </div>
-                ))}
-              </div>
+                  <button 
+                    className="btn btn-primary"
+                    style={{ 
+                      backgroundColor: '#0ea5e9',
+                      border: 'none',
+                      boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)'
+                    }}
+                  >
+                    Download PDF
+                  </button>
+                </div>
+              ))}
             </Card.Body>
           </Card>
         </Col>

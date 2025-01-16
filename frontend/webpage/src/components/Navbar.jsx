@@ -6,7 +6,7 @@ import MenuIcon from '@mui/icons-material/Menu';
 import CloseIcon from '@mui/icons-material/Close';
 
 const NavBar = styled.nav`
-  background-color: #16213e;
+  background-color: #000000;
   padding: 1rem 0;
   position: fixed;
   top: 0;
@@ -21,6 +21,7 @@ const NavContainer = styled.div`
   justify-content: space-between;
   align-items: center;
   padding: 0 2rem;
+  position: relative;
 `;
 
 const LogoContainer = styled(Link)`
@@ -29,13 +30,14 @@ const LogoContainer = styled(Link)`
   text-decoration: none;
   gap: 0.5rem;
   z-index: 1002;
+  margin-right: auto;
 `;
 
 const LogoIcon = styled(motion.div)`
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #00ff95 0%, #0066ff 100%);
+  background: #ffffff;
   width: 40px;
   height: 40px;
   border-radius: 12px;
@@ -47,7 +49,7 @@ const LogoIcon = styled(motion.div)`
     position: absolute;
     width: 16px;
     height: 16px;
-    background: #fff;
+    background: #000000;
     transform: rotate(45deg);
     border-radius: 2px;
   }
@@ -56,9 +58,7 @@ const LogoIcon = styled(motion.div)`
 const LogoText = styled.span`
   font-size: 1.8rem;
   font-weight: bold;
-  background: linear-gradient(135deg, #00ff95 0%, #0066ff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #ffffff;
   text-transform: uppercase;
   letter-spacing: 2px;
 `;
@@ -66,20 +66,24 @@ const LogoText = styled.span`
 const NavLinks = styled.div`
   display: flex;
   gap: 2rem;
+  position: absolute;
+  left: 60%;
+  transform: translateX(-50%);
 
   @media (max-width: 768px) {
     display: none;
   }
 
   a {
-    color: #e94560;
+    color: #ffffff;
     text-decoration: none;
     font-weight: 500;
     font-size: 1.1rem;
-    transition: color 0.3s ease;
+    transition: all 0.3s ease;
 
     &:hover {
-      color: #00ff95;
+      color: #cccccc;
+      transform: translateY(-2px);
     }
   }
 `;
@@ -88,7 +92,7 @@ const MenuButton = styled.button`
   display: none;
   background: none;
   border: none;
-  color: #e94560;
+  color: #ffffff;
   cursor: pointer;
   padding: 0.5rem;
   z-index: 1002;
@@ -104,12 +108,24 @@ const MobileMenu = styled(motion.div)`
   right: 0;
   width: 250px;
   height: 100vh;
-  background-color: #16213e;
+  background-color: #000000;
   padding: 5rem 2rem 2rem;
   display: flex;
   flex-direction: column;
   gap: 2rem;
   z-index: 1001;
+
+  a {
+    color: #ffffff;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 1.1rem;
+    transition: color 0.3s ease;
+
+    &:hover {
+      color: #cccccc;
+    }
+  }
 `;
 
 const Overlay = styled(motion.div)`

@@ -113,7 +113,7 @@ const Login = () => {
             justifyContent: 'center',
             alignItems: 'center',
             minHeight: '100vh',
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            background: '#000000',
         }}>
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
@@ -125,14 +125,15 @@ const Login = () => {
                     borderRadius: 2,
                     width: '100%',
                     maxWidth: 400,
-                    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.2)',
+                    boxShadow: '0 4px 20px rgba(255, 255, 255, 0.1)',
+                    backgroundColor: '#ffffff',
                 }}>
-                    <Typography variant="h4" align="center" gutterBottom>
+                    <Typography variant="h4" align="center" gutterBottom sx={{ color: '#000000' }}>
                         Welcome Back
                     </Typography>
                     <form onSubmit={handleSubmit}>
                         <Box sx={{ position: 'relative', mb: 3 }}>
-                            <FaUser style={{ position: 'absolute', top: 12, left: 12, color: '#667eea' }} />
+                            <FaUser style={{ position: 'absolute', top: 12, left: 12, color: '#000000' }} />
                             <TextField
                                 fullWidth
                                 label="Email"
@@ -141,12 +142,22 @@ const Login = () => {
                                 onChange={(e) => handleInputChange('email', e.target.value)}
                                 error={!!errors.email}
                                 helperText={errors.email}
-                                sx={{ '& .MuiOutlinedInput-root': { pl: 5 } }}
+                                sx={{ 
+                                    '& .MuiOutlinedInput-root': { 
+                                        pl: 5,
+                                        '&.Mui-focused fieldset': {
+                                            borderColor: '#000000',
+                                        },
+                                    },
+                                    '& label.Mui-focused': {
+                                        color: '#000000',
+                                    },
+                                }}
                             />
                         </Box>
 
                         <Box sx={{ position: 'relative', mb: 3 }}>
-                            <FaLock style={{ position: 'absolute', top: 12, left: 12, color: '#667eea' }} />
+                            <FaLock style={{ position: 'absolute', top: 12, left: 12, color: '#000000' }} />
                             <TextField
                                 fullWidth
                                 label="Password"
@@ -156,27 +167,35 @@ const Login = () => {
                                 onChange={(e) => handleInputChange('password', e.target.value)}
                                 error={!!errors.password}
                                 helperText={errors.password}
-                                sx={{ '& .MuiOutlinedInput-root': { pl: 5 } }}
+                                sx={{ 
+                                    '& .MuiOutlinedInput-root': { 
+                                        pl: 5,
+                                        '&.Mui-focused fieldset': {
+                                            borderColor: '#000000',
+                                        },
+                                    },
+                                    '& label.Mui-focused': {
+                                        color: '#000000',
+                                    },
+                                }}
                             />
-                            {formData.password && (
-                                <FormHelperText sx={{ color: passwordStrengthColor[passwordStrength] }}>
-                                    Password Strength: {passwordStrength}
-                                </FormHelperText>
-                            )}
                         </Box>
-
-                        {errors.submit && (
-                            <Typography color="error" align="center" sx={{ mb: 2 }}>
-                                {errors.submit}
-                            </Typography>
-                        )}
 
                         <Button
                             fullWidth
                             variant="contained"
                             type="submit"
                             disabled={!!errors.email || !!errors.password}
-                            sx={{ mb: 2, backgroundColor: '#764ba2', '&:hover': { backgroundColor: '#667eea' } }}
+                            sx={{ 
+                                mb: 2, 
+                                backgroundColor: '#000000', 
+                                '&:hover': { 
+                                    backgroundColor: '#333333' 
+                                },
+                                '&:disabled': {
+                                    backgroundColor: '#cccccc',
+                                }
+                            }}
                         >
                             Login
                         </Button>
@@ -188,22 +207,30 @@ const Login = () => {
                                 fullWidth
                                 startIcon={<FcGoogle size={20} />}
                                 sx={{
-                                    borderColor: '#764ba2',
-                                    color: '#764ba2',
-                                    '&:hover': { borderColor: '#667eea', color: '#667eea' },
-                                    display: 'flex',
-                                    gap: 1,
-                                    alignItems: 'center',
-                                    justifyContent: 'center'
+                                    borderColor: '#000000',
+                                    color: '#000000',
+                                    '&:hover': { 
+                                        borderColor: '#333333', 
+                                        color: '#333333',
+                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                    },
                                 }}
                             >
                                 Login with Google
                             </Button>
                         </Box>
 
-                        <Typography align="center">
+                        <Typography align="center" sx={{ color: '#000000' }}>
                             Don't have an account?{' '}
-                            <Button onClick={() => navigate('/register')} sx={{ color: '#764ba2' }}>
+                            <Button 
+                                onClick={() => navigate('/register')} 
+                                sx={{ 
+                                    color: '#000000',
+                                    '&:hover': {
+                                        backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                                    }
+                                }}
+                            >
                                 Register
                             </Button>
                         </Typography>
@@ -215,3 +242,4 @@ const Login = () => {
 };
 
 export default Login;
+
