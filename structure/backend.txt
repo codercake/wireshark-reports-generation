@@ -1,0 +1,30 @@
+/backend
+│
+├── /config
+│   └── config.db                database config 
+│
+├── /controllers
+│   └── packetController.js      main packet controller 
+│
+├── /models
+│   └── packet.js                data models for packets 
+│
+├── /routes
+│   └── packetRoutes.js          routes for the express server
+│
+├── /scripts
+│   └── capture_packets.sh       shell script for automating packet capture
+│
+├── /services
+│   ├── packet_capture.py        pyshark/tShark logic
+│   └── report_generator.py      logic for generating reports 
+│
+├── /static
+│   └── swagger.json             swagger spec (for API documentation)
+│
+├── /utils
+│   └── helpers.py             
+│
+├── config.py                    flask/express configuration settings
+├── server.js                    express server 
+└── app.py                       main flask application
