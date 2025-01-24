@@ -1,0 +1,29 @@
+frontend/
+└── src/
+    ├── App.js
+    ├── App.test.js
+    ├── ExportButton.jsx
+    ├── Footer.jsx
+    ├── Home.jsx
+    ├── Login.jsx
+    ├── Navbar.jsx
+    ├── NetworkPulse.jsx
+    ├── PacketDisplay.jsx
+    ├── PacketStat.jsx
+    ├── PacketTable.jsx
+    ├── Profile.jsx
+    ├── ProtectedRoute.jsx
+    ├── Register.jsx
+    ├── Reports.jsx
+    ├── firebaseConfig.js
+    ├── index.js
+    ├── index.css
+    ├── exportUtils.js
+    ├── /context
+    │   └── AuthContext.jsx
+    ├── /services
+    │   └── api.js
+    ├── /styles
+    │   └── global.css
+    ├── /utils
+        ├── dosDetection.ts
