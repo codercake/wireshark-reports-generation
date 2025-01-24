@@ -1,85 +1,50 @@
 import pyshark
 import json
+import sys
+import requests
 from datetime import datetime
-from typing import List, Dict
-import threading
-import queue
 
-class PacketCapture:
-    def __init__(self):
-        self.packet_queue = queue.Queue()
-        self.is_capturing = False
-        self.capture_thread = None
-        self.stats = {
-            "totalPackets": 0,
-            "totalBytes": 0,
-            "packetsPerSec": 0,
-            "protocols": {},
-            "packetSizes": {}
-        }
+def get_packet_info(packet):
+    packet_info = {
+        'protocol': packet.highest_layer,
+        'length': packet.length,
+        'timestamp': datetime.now().isoformat(),
+        'packet_type': packet.highest_layer
+    }
+    
+    # Handle IP layer
+    if hasattr(packet, 'ip'):
+        packet_info.update({
+            'source_ip': packet.ip.src,
+            'dest_ip': packet.ip.dst
+        })
+    
+    # Handle Transport layer (TCP/UDP)
+    if hasattr(packet, 'transport_layer'):
+        transport = packet[packet.transport_layer]
+        packet_info.update({
+            'source_port': transport.srcport,
+            'dest_port': transport.dstport
+        })
+    
+    return packet_info
 
-    def packet_handler(self, packet):
+def capture_packets(interface='en0'):
+    print(f"Starting packet capture on interface: {interface}")
+    capture = pyshark.LiveCapture(interface=interface)
+    
+    for packet in capture.sniff_continuously():
         try:
-            packet_data = {
-                "timestamp": str(datetime.now()),
-                "protocol": packet.highest_layer,
-                "source": packet.ip.src if hasattr(packet, 'ip') else "unknown",
-                "destination": packet.ip.dst if hasattr(packet, 'ip') else "unknown",
-                "length": int(packet.length),
-                "info": packet.info if hasattr(packet, 'info') else ""
-            }
+            packet_data = get_packet_info(packet)
+            print(f"Captured packet: {packet_data}")
             
-            self.packet_queue.put(packet_data)
-            self.update_stats(packet_data)
+            response = requests.post('http://localhost:5001/api/packets', json=packet_data)
+            print(f"Sent to server: {response.status_code}")
             
         except Exception as e:
-            print(f"Error processing packet: {e}")
+            print(f"Error processing packet: {str(e)}")
+            continue
 
-    def update_stats(self, packet_data: Dict):
-        self.stats["totalPackets"] += 1
-        self.stats["totalBytes"] += packet_data["length"]
-        
-        # Update protocol distribution
-        protocol = packet_data["protocol"]
-        self.stats["protocols"][protocol] = self.stats["protocols"].get(protocol, 0) + 1
-        
-        # Update packet size distribution
-        size_category = self.get_size_category(packet_data["length"])
-        self.stats["packetSizes"][size_category] = self.stats["packetSizes"].get(size_category, 0) + 1
-
-    @staticmethod
-    def get_size_category(size: int) -> str:
-        if size <= 64: return "0-64"
-        elif size <= 128: return "65-128"
-        elif size <= 256: return "129-256"
-        elif size <= 512: return "257-512"
-        else: return "513+"
-
-    def start_capture(self, interface: str = 'eth0'):
-        if not self.is_capturing:
-            self.is_capturing = True
-            self.capture_thread = threading.Thread(target=self._capture_packets, args=(interface,))
-            self.capture_thread.start()
-
-    def _capture_packets(self, interface: str):
-        capture = pyshark.LiveCapture(interface=interface)
-        for packet in capture.sniff_continuously():
-            if not self.is_capturing:
-                break
-            self.packet_handler(packet)
-
-    def stop_capture(self):
-        self.is_capturing = False
-        if self.capture_thread:
-            self.capture_thread.join()
-
-    def get_stats(self) -> Dict:
-        return self.stats
-
-    def get_packets(self) -> List[Dict]:
-        packets = []
-        while not self.packet_queue.empty():
-            packets.append(self.packet_queue.get())
-        return packets
-
-packet_capture = PacketCapture()
+if __name__ == '__main__':
+    interface = sys.argv[1] if len(sys.argv) > 1 else 'en0'
+    capture_packets(interface)

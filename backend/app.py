@@ -1,52 +1,45 @@
-from flask import Flask, jsonify, request
+from flask import Flask, request, jsonify
 from flask_cors import CORS
-from services.packet_capture import packet_capture
-import logging
 
 app = Flask(__name__)
 CORS(app)
 
-logging.basicConfig(level=logging.INFO)
+import subprocess
+import os
 
-@app.route('/api/capture', methods=['POST'])
+app = Flask(__name__)
+
+@app.route('/start_capture', methods=['POST'])
 def start_capture():
     try:
-        interface = request.json.get('interface', 'eth0')
-        packet_capture.start_capture(interface)
-        return jsonify({
-            'status': 'success',
-            'message': f'Capture started on interface {interface}'
-        })
+        data = request.get_json()
+        interface = data.get('interface', 'eth0')
+        
+        capture_process = subprocess.Popen([
+            'python3',
+            os.path.join(os.path.dirname(__file__), 'services/packet_capture.py'),
+            interface
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
+        stdout, stderr = capture_process.communicate()
+        
+        if capture_process.returncode == 0:
+            return jsonify({
+                'status': 'success',
+                'message': f'Capture started on interface {interface}',
+                'output': stdout.decode()
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': f'Capture failed: {stderr.decode()}'
+            }), 500
+            
     except Exception as e:
-        logging.error(f"Error starting capture: {e}")
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
-
-@app.route('/api/stats', methods=['GET'])
-def get_stats():
-    try:
-        stats = packet_capture.get_stats()
-        return jsonify(stats)
-    except Exception as e:
-        logging.error(f"Error getting stats: {e}")
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
-
-@app.route('/api/packets', methods=['GET'])
-def get_packets():
-    try:
-        packets = packet_capture.get_packets()
-        return jsonify(packets)
-    except Exception as e:
-        logging.error(f"Error getting packets: {e}")
         return jsonify({
             'status': 'error',
             'message': str(e)
         }), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5002)
+    app.run(host='0.0.0.0', port=5002, debug=True)
