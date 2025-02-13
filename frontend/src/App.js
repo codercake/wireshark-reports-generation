@@ -32,6 +32,7 @@ import Profile from './pages/Profile';
 import Navbar from './pages/Navbar';
 import PacketDisplay from './pages/PacketDisplay';
 import PacketStats from './pages/PacketStats';
+import ReportDisplay from './pages/ReportDisplay';
 import Logout from './pages/Logout';
 
 // Components
@@ -209,6 +210,7 @@ const AppContent = () => {
             <Route path="/reports" element={user ? <Reports packets={packets} /> : <Navigate to="/login" />} />
             <Route path="/profile" element={user ? <Profile /> : <Navigate to="/login" />} />
             <Route path="/packets" element={user ? <PacketTable packets={packets} /> : <Navigate to="/login" />} />
+            <Route path="/reports" element={<ReportDisplay />} />
 
             {/* Default Routes */}
             <Route path="/" element={<Navigate to={user ? "/home" : "/login"} />} />

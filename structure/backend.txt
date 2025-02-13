@@ -28,3 +28,40 @@
 ├── config.py                    flask/express configuration settings
 ├── server.js                    express server 
 └── app.py                       main flask application
+
+routes
+/api/status - start server
+
+
+Express forwards the request to Flask, which starts the packet capture process
+
+The packet capture service sends packets back to Express
+
+Express stores the packets in MongoDB and broadcasts them to WebSocket clients
+
+The data flow is: Wireshark (via pyshark) → Flask → Express → MongoDB + WebSocket clients
+
+
+So the main components are:
+
+1. Capturing packets via pyshark in the Python service.
+
+2. Storing packets in MongoDB via Express.
+
+3. Generating reports based on the stored packets.
+
+ The generateWiresharkReport function should likely aggregate data from MongoDB, perform some analysis (maybe using the analyzer utilities mentioned), and then create a report file. The report could include traffic statistics, protocol distribution, security threats detected, etc.
+
+ # Current route definitions
+@app.route('/start_capture', methods=['POST'])  # <- Correct endpoint
+@app.route('/stop_capture', methods=['POST'])
+@app.route('/health')
+
+# Your error-causing URL: http://127.0.0.1:5002/api/capture/start
+# Should be: http://127.0.0.1:5002/start_capture
+
+FLASK API
+/start_capture (POST): Starts packet capture
+/stop_capture (POST): Stops packet capture
+/generate_report (POST): Generates a report
+/health (GET): Checks the health status of the application

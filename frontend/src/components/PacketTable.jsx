@@ -8,8 +8,12 @@ import {
     TableHead, 
     TableRow, 
     Paper,
-    TablePagination 
+    TablePagination,
+    Button
 } from '@mui/material';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import Papa from 'papaparse';
 
 const PacketTable = ({ packets }) => {
     const [page, setPage] = React.useState(0);
@@ -24,9 +28,47 @@ const PacketTable = ({ packets }) => {
         setPage(0);
     };
 
+    const downloadPDF = () => {
+        const doc = new jsPDF();
+        autoTable(doc, {
+            head: [['Time', 'Protocol', 'Source', 'Destination', 'Length', 'Severity']],
+            body: packets.map(packet => [
+                new Date(packet.timestamp).toLocaleString(),
+                packet.protocol,
+                `${packet.source_ip}:${packet.source_port}`,
+                `${packet.dest_ip}:${packet.dest_port}`,
+                packet.length,
+                packet.severity
+            ]),
+        });
+        doc.save('packets_report.pdf');
+    };
+
+    const downloadCSV = () => {
+        const csv = Papa.unparse(packets.map(packet => ({
+            Time: new Date(packet.timestamp).toLocaleString(),
+            Protocol: packet.protocol,
+            Source: `${packet.source_ip}:${packet.source_port}`,
+            Destination: `${packet.dest_ip}:${packet.dest_port}`,
+            Length: packet.length,
+            Severity: packet.severity
+        })));
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', 'packets_report.csv');
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     return (
         <Box p={3}>
-            <TableContainer component={Paper}>
+            <Button variant="contained" color="primary" onClick={downloadPDF}>Download PDF</Button>
+            <Button variant="contained" color="secondary" onClick={downloadCSV} style={{ marginLeft: 10 }}>Download CSV</Button>
+            <TableContainer component={Paper} style={{ marginTop: 20 }}>
                 <Table>
                     <TableHead>
                         <TableRow>

@@ -1,15 +1,24 @@
 import React from 'react';
-import { 
-    Table, 
-    TableBody, 
-    TableCell, 
-    TableContainer, 
-    TableHead, 
-    TableRow, 
-    Paper 
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Paper,
+    Typography,
 } from '@mui/material';
 
 const PacketDisplay = ({ packets }) => {
+    if (!packets || packets.length === 0) {
+        return (
+            <Typography variant="h6" align="center">
+                No packets available.
+            </Typography>
+        );
+    }
+
     return (
         <TableContainer component={Paper}>
             <Table>
@@ -28,8 +37,8 @@ const PacketDisplay = ({ packets }) => {
                         <TableRow key={index}>
                             <TableCell>{new Date(packet.timestamp).toLocaleTimeString()}</TableCell>
                             <TableCell>{packet.protocol}</TableCell>
-                            <TableCell>{`${packet.source_ip}:${packet.source_port}`}</TableCell>
-                            <TableCell>{`${packet.dest_ip}:${packet.dest_port}`}</TableCell>
+                            <TableCell>{`${packet.source_ip}:${packet.source_port || 'N/A'}`}</TableCell>
+                            <TableCell>{`${packet.dest_ip}:${packet.dest_port || 'N/A'}`}</TableCell>
                             <TableCell>{packet.length}</TableCell>
                             <TableCell>{packet.packet_type}</TableCell>
                         </TableRow>

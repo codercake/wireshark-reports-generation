@@ -1,11 +1,13 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Box, Typography, Paper, Container, Grid, Button } from '@mui/material';
+import { Box, Typography, Paper, Container, Grid } from '@mui/material';
 import styled from '@emotion/styled';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
 import SecurityIcon from '@mui/icons-material/Security';
 import SpeedIcon from '@mui/icons-material/Speed';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import Navbar from '../pages/Navbar';
+import { Activity, GitGraph, Network, Zap } from "lucide-react";
 
 const HeroSection = styled(Box)`
   min-height: 100vh;
@@ -15,14 +17,6 @@ const HeroSection = styled(Box)`
   display: flex;
   align-items: center;
   padding-top: 64px;
-`;
-
-const BackgroundAnimation = styled(motion.div)`
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  background: radial-gradient(circle at center, transparent 0%, #000000 70%);
-  opacity: 0.6;
 `;
 
 const FeatureCard = styled(motion(Paper))`
@@ -38,25 +32,19 @@ const FeatureCard = styled(motion(Paper))`
   &:hover {
     transform: translateY(-5px);
     background: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 20px rgba(33, 150, 243, 0.2);
   }
 `;
 
-const GradientText = styled(Typography)`
-  background: linear-gradient(45deg, #2196f3, #21cbf3);
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
-  display: inline-block;
-`;
-
-const StyledButton = styled(Button)`
+const StyledButton = styled(motion.button)`
   background: linear-gradient(45deg, #2196f3, #21cbf3);
   color: white;
   padding: 12px 32px;
   border-radius: 30px;
-  text-transform: none;
+  border: none;
   font-size: 1.1rem;
   font-weight: 600;
+  cursor: pointer;
   transition: all 0.3s ease;
 
   &:hover {
@@ -67,22 +55,42 @@ const StyledButton = styled(Button)`
 
 const features = [
   {
-    icon: <AnalyticsIcon sx={{ fontSize: 40 }} />,
+    icon: <AnalyticsIcon sx={{ fontSize: 40, color: '#2196f3' }} />,
     title: "Advanced Analytics",
     description: "Deep packet inspection and comprehensive traffic analysis with detailed visualizations."
   },
   {
-    icon: <SecurityIcon sx={{ fontSize: 40 }} />,
+    icon: <SecurityIcon sx={{ fontSize: 40, color: '#2196f3' }} />,
     title: "Security Analysis",
     description: "Identify potential security threats and anomalies in your network traffic."
   },
   {
-    icon: <SpeedIcon sx={{ fontSize: 40 }} />,
+    icon: <Activity size={40} color="#2196f3" />,
+    title: "Real-time Analysis",
+    description: "Monitor network traffic in real-time with advanced packet inspection."
+  },
+  {
+    icon: <GitGraph size={40} color="#2196f3" />,
+    title: "Protocol Breakdown",
+    description: "Detailed insights into network protocols and traffic patterns."
+  },
+  {
+    icon: <SpeedIcon sx={{ fontSize: 40, color: '#2196f3' }} />,
     title: "Real-time Processing",
     description: "Process and analyze network captures in real-time with minimal latency."
   },
   {
-    icon: <CloudUploadIcon sx={{ fontSize: 40 }} />,
+    icon: <Network size={40} color="#2196f3" />,
+    title: "Network Mapping",
+    description: "Visualize your network topology and understand connection patterns."
+  },
+  {
+    icon: <Zap size={40} color="#2196f3" />,
+    title: "Threat Detection",
+    description: "Advanced security threat detection and anomaly identification."
+  },
+  {
+    icon: <CloudUploadIcon sx={{ fontSize: 40, color: '#2196f3' }} />,
     title: "Cloud Integration",
     description: "Seamlessly store and access your captures and reports from anywhere."
   }
@@ -90,17 +98,9 @@ const features = [
 
 const Home = () => {
   return (
-    <Box>
+    <Box sx={{ background: '#000000' }}>
+      <Navbar />
       <HeroSection>
-        <BackgroundAnimation
-          animate={{
-            background: [
-              "radial-gradient(circle at 0% 0%, transparent 0%, #000000 70%)",
-              "radial-gradient(circle at 100% 100%, transparent 0%, #000000 70%)"
-            ]
-          }}
-          transition={{ duration: 10, repeat: Infinity, repeatType: "reverse" }}
-        />
         <Container maxWidth="lg">
           <Grid container spacing={6}>
             <Grid item xs={12} md={6}>
@@ -109,18 +109,33 @@ const Home = () => {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8 }}
               >
-                <GradientText variant="h2" sx={{ mb: 3, fontWeight: 700 }}>
-                  Transform Network Analysis
-                </GradientText>
+                <Typography
+                  variant="h2"
+                  sx={{
+                    mb: 3,
+                    fontWeight: 700,
+                    background: 'linear-gradient(45deg, #2196f3, #21cbf3)',
+                    backgroundClip: 'text',
+                    WebkitBackgroundClip: 'text',
+                    color: 'transparent'
+                  }}
+                >
+                  Network Analysis, Simplified
+                </Typography>
                 <Typography variant="h5" sx={{ color: 'white', mb: 4, opacity: 0.9 }}>
                   Generate comprehensive reports from your Wireshark captures with powerful analytics and insights.
                 </Typography>
                 <StyledButton
-                  variant="contained"
-                  size="large"
-                  endIcon={<motion.div animate={{ x: [0, 5, 0] }} transition={{ repeat: Infinity, duration: 1.5 }}>→</motion.div>}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
                 >
                   Get Started
+                  <motion.span
+                    animate={{ x: [0, 5, 0] }}
+                    transition={{ repeat: Infinity, duration: 1.5 }}
+                  >
+                    →
+                  </motion.span>
                 </StyledButton>
               </motion.div>
             </Grid>
@@ -135,13 +150,15 @@ const Home = () => {
                   transition={{ duration: 0.5, delay: index * 0.1 }}
                 >
                   <FeatureCard elevation={0}>
-                    {feature.icon}
-                    <Typography variant="h6" sx={{ mt: 2, mb: 1, fontWeight: 600 }}>
-                      {feature.title}
-                    </Typography>
-                    <Typography variant="body1" sx={{ opacity: 0.8 }}>
-                      {feature.description}
-                    </Typography>
+                    <Box sx={{ textAlign: 'center' }}>
+                      {feature.icon}
+                      <Typography variant="h6" sx={{ mt: 2, mb: 1, fontWeight: 600 }}>
+                        {feature.title}
+                      </Typography>
+                      <Typography variant="body1" sx={{ opacity: 0.8 }}>
+                        {feature.description}
+                      </Typography>
+                    </Box>
                   </FeatureCard>
                 </motion.div>
               </Grid>

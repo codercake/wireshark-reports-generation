@@ -10,7 +10,7 @@ const api = axios.create({
 });
 
 export const packetService = {
-  startCapture: (interfaceName = 'eth0') => api.post('/capture/start', { interface: interfaceName }),
+  startCapture: (interfaceName = 'en0') => api.post('/capture/start', { interface: interfaceName }),
   stopCapture: () => api.post('/capture/stop'),
   getStats: () => api.get('/stats'),
   getPackets: (page = 1, limit = 10) => api.get(`/packets?page=${page}&limit=${limit}`),
