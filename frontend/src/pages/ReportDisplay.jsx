@@ -1,55 +1,40 @@
-import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import React from 'react';
 import { Box, Typography, Button } from '@mui/material';
+import PacketTable from '../components/PacketTable';
+import { useLocation } from 'react-router-dom';
 
 const ReportDisplay = () => {
-    const [reports, setReports] = useState([]);
-    const [loading, setLoading] = useState(true);
-    
-    useEffect(() => {
-        const fetchReports = async () => {
-            try {
-                const response = await axios.get(`${process.env.REACT_APP_API_URL}/reports`);
-                setReports(response.data);
-            } catch (error) {
-                console.error('Error fetching reports:', error);
-            } finally {
-                setLoading(false);
-            }
-        };
+  const location = useLocation();
+  const { report_data, packet_data, report_path } = location.state || {};
 
-        fetchReports();
-    }, []);
-
-    if (loading) {
-        return <Typography>Loading reports...</Typography>;
-    }
-
+  if (!report_data || !packet_data) {
     return (
-        <Box>
-            <Typography variant="h4" gutterBottom>
-                Generated Reports
-            </Typography>
-            {reports.length === 0 ? (
-                <Typography>No reports available.</Typography>
-            ) : (
-                reports.map((report, index) => (
-                    <Box key={index} mb={2}>
-                        <Typography variant="h6">Report generated on: {report.timestamp}</Typography>
-                        <Button 
-                            variant="contained" 
-                            color="primary" 
-                            href={report.report_path} 
-                            target="_blank"
-                            rel="noopener noreferrer"
-                        >
-                            View Report
-                        </Button>
-                    </Box>
-                ))
-            )}
-        </Box>
+      <Box p={3}>
+        <Typography variant="h6">
+          No report data available. Please generate a report first.
+        </Typography>
+      </Box>
     );
+  }
+
+  return (
+    <Box p={3}>
+      <Typography variant="h4" gutterBottom>
+        Report Details
+      </Typography>
+      <Typography variant="h6">
+        Report Generated: {report_data.timestamp}
+      </Typography>
+      <Typography>
+        Report Path: {report_path}
+      </Typography>
+      {/* Display other report details here */}
+      <Typography variant="h5" mt={3}>
+        Extracted Packets:
+      </Typography>
+      <PacketTable packets={packet_data} />
+    </Box>
+  );
 };
 
 export default ReportDisplay;

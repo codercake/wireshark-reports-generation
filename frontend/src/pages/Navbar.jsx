@@ -1,19 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import styled from '@emotion/styled';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import MenuIcon from '@mui/icons-material/Menu';
 import CloseIcon from '@mui/icons-material/Close';
 import { useAuth } from '../context/AuthContext';
 
 const NavBar = styled.nav`
   background-color: #000000;
-  padding: 1.5rem 0;
+  padding: 1rem 0;
   position: fixed;
   top: 0;
   width: 100%;
   z-index: 1000;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+
+  @media (max-width: 768px) {
+    padding: 0.8rem 0;
+  }
 `;
 
 const NavContainer = styled.div`
@@ -22,18 +26,26 @@ const NavContainer = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 3rem;
+  padding: 0 2rem;
+
+  @media (max-width: 480px) {
+    padding: 0 1rem;
+  }
 `;
 
 const LogoContainer = styled(Link)`
   display: flex;
   align-items: center;
   text-decoration: none;
-  gap: 1.5rem;
+  gap: 1rem;
+
+  @media (max-width: 480px) {
+    gap: 0.5rem;
+  }
 `;
 
 const RotatingLogo = styled.span`
-  font-size: 3.5rem;
+  font-size: 2.5rem;
   line-height: 1;
   transition: transform 0.6s ease;
   cursor: pointer;
@@ -41,19 +53,31 @@ const RotatingLogo = styled.span`
   &:hover {
     transform: rotate(360deg);
   }
+
+  @media (max-width: 480px) {
+    font-size: 2rem;
+  }
 `;
 
 const LogoText = styled.span`
-  font-size: 2.4rem;
+  font-size: 1.8rem;
   font-weight: bold;
   color: #ffffff;
   text-transform: uppercase;
-  letter-spacing: 3px;
+  letter-spacing: 2px;
+
+  @media (max-width: 768px) {
+    font-size: 1.5rem;
+  }
+
+  @media (max-width: 480px) {
+    font-size: 1.2rem;
+  }
 `;
 
 const NavLinks = styled.div`
   display: flex;
-  gap: 3rem;
+  gap: 2rem;
   align-items: center;
 
   @media (max-width: 768px) {
@@ -65,9 +89,10 @@ const StyledNavLink = styled(NavLink)`
   color: #ffffff;
   text-decoration: none;
   font-weight: 600;
-  font-size: 1.3rem;
+  font-size: 1.1rem;
   transition: all 0.3s ease;
   padding: 0.5rem 1rem;
+  white-space: nowrap;
 
   &:hover {
     color: #2196f3;
@@ -89,6 +114,11 @@ const StyledNavLink = styled(NavLink)`
       border-radius: 2px;
     }
   }
+
+  @media (max-width: 768px) {
+    font-size: 1.2rem;
+    padding: 1rem;
+  }
 `;
 
 const AuthButton = styled(NavLink)`
@@ -97,6 +127,7 @@ const AuthButton = styled(NavLink)`
   font-weight: 600;
   text-decoration: none;
   transition: all 0.3s ease;
+  font-size: 1rem;
   
   ${props => props.$primary ? `
     background: linear-gradient(45deg, #2196f3, #21cbf3);
@@ -114,20 +145,33 @@ const AuthButton = styled(NavLink)`
       background: rgba(33, 150, 243, 0.1);
     }
   `}
+
+  @media (max-width: 768px) {
+    width: 100%;
+    text-align: center;
+    margin: 0.5rem 0;
+  }
 `;
 
 const MobileMenu = styled(motion.div)`
   position: fixed;
   top: 0;
   right: 0;
-  width: 300px;
+  width: 100%;
+  max-width: 300px;
   height: 100vh;
   background-color: #000000;
-  padding: 6rem 2.5rem 2.5rem;
+  padding: 5rem 1.5rem 2rem;
   display: flex;
   flex-direction: column;
-  gap: 2.5rem;
+  gap: 1rem;
   z-index: 1001;
+  overflow-y: auto;
+
+  @media (max-width: 480px) {
+    width: 100%;
+    max-width: none;
+  }
 `;
 
 const MenuButton = styled.button`
@@ -136,7 +180,7 @@ const MenuButton = styled.button`
   border: none;
   color: #ffffff;
   cursor: pointer;
-  padding: 0.8rem;
+  padding: 0.5rem;
 
   @media (max-width: 768px) {
     display: block;

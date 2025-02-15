@@ -7,6 +7,7 @@ import os
 from fpdf import FPDF
 from collections import defaultdict, Counter
 import pandas as pd
+import pcapkit
 
 class WiresharkReportGenerator:
     def __init__(self, output_dir="reports"):
@@ -217,3 +218,9 @@ class WiresharkReportGenerator:
                  pdf.add_page()
                  pdf.image(img_path,x=10,y=10,w=190)
 
+pcapfile = 'your_pcap_file.pcap'
+try:
+    extraction = pcapkit.extract(fin=pcapfile, store=False, nofile=True, tcp=True, strict=True)
+    # Process extracted data here
+except Exception as e:
+    logger.error(f"Error generating report: {e}")

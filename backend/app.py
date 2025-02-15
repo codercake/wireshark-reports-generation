@@ -2,8 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from services.packet_capture import NetworkMonitor
 from services.report_generator import WiresharkReportGenerator
-import os
-import json
+import threading
 from datetime import datetime
 
 app = Flask(__name__)
@@ -17,7 +16,7 @@ def start_capture():
     global monitor
     try:
         data = request.get_json()
-        interface = data.get('interface', 'en0')  # Changed default to 'en0' for Mac users
+        interface = data.get('interface', 'eth0')
         monitor = NetworkMonitor(interface=interface)
         monitor.start_monitoring()
         return jsonify({
@@ -43,26 +42,33 @@ def generate_report():
     global report_generator
     try:
         data = request.get_json()
-        
         report_data = {
             'start_time': data['startTime'],
             'end_time': data['endTime'],
             'report_type': data['reportType']
         }
         
+        # Fetch captured packets
         packet_data = monitor.get_captured_packets() if monitor else []
         
-        # Check if any packets were captured before generating reports
+        # Check if packets were captured
         if not packet_data:
-            return jsonify({'status': 'error', 'message': 'No packets captured.'}), 400
+            logger.warning("No packets captured for report generation.")
+            return jsonify({
+                'status': 'error',
+                'message': 'No packets captured.'
+            }), 400
         
+        # Generate visualizations
         report_generator.generate_visualizations(packet_data)
         
+        # Generate report based on type
         if report_data['report_type'] == 'traffic':
             report = report_generator.generate_traffic_report(packet_data)
         else:
             report = report_generator.generate_security_report(packet_data)
         
+        # Export the report to JSON
         report_path = report_generator.export_to_json(report, f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
         
         return jsonify({
@@ -71,7 +77,9 @@ def generate_report():
             'report_data': report
         })
     except Exception as e:
+        logger.error(f"Error generating report: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -79,25 +87,7 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'monitor_active': monitor is not None
-})
-
-@app.route('/api/reports', methods=['GET'])
-def get_reports():
-    try:
-        report_files = os.listdir('reports')  # Adjust this path as needed
-        reports = []
-
-        for report_file in report_files:
-            if report_file.endswith('.json'):
-                with open(os.path.join('reports', report_file), 'r') as f:
-                    report_data = json.load(f)
-                    report_data['report_path'] = f'/path/to/reports/{report_file}'  # Adjust path for PDF/CSV
-                    reports.append(report_data)
-                    
-        return jsonify(reports)
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
+    })
 
 if __name__ == '__main__':
     app.run(port=5002, debug=True)
