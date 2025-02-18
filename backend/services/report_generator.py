@@ -7,7 +7,11 @@ import os
 from fpdf import FPDF
 from collections import defaultdict, Counter
 import pandas as pd
-import pcapkit
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class WiresharkReportGenerator:
     def __init__(self, output_dir="reports"):
@@ -27,11 +31,17 @@ class WiresharkReportGenerator:
         }
 
     def generate_security_report(self, packet_data):
+        suspicious_packets = self._identify_suspicious_packets(packet_data)
+        port_scan_attempts = self._detect_port_scans(packet_data)
+        unusual_traffic_patterns = self._analyze_traffic_patterns(packet_data)
+        dos_attacks = self._detect_dos_attacks(packet_data)
+
         return {
             'timestamp': datetime.now().isoformat(),
-            'suspicious_packets': self._identify_suspicious_packets(packet_data),
-            'port_scan_attempts': self._detect_port_scans(packet_data),
-            'unusual_traffic_patterns': self._analyze_traffic_patterns(packet_data)
+            'suspicious_packets': suspicious_packets,
+            'port_scan_attempts': port_scan_attempts,
+            'unusual_traffic_patterns': unusual_traffic_patterns,
+            'dos_attacks': dos_attacks
         }
 
     def export_to_pdf(self, report_data, filename, packet_data=None):
@@ -46,10 +56,12 @@ class WiresharkReportGenerator:
         pdf.set_font(size=12)
         pdf.cell(200, 10, txt=f"Generated: {report_data['timestamp']}", ln=1)
         pdf.ln(10)
+
         if 'total_packets' in report_data:
             self._add_traffic_report_content(pdf, report_data)
         else:
             self._add_security_report_content(pdf, report_data)
+
         self._add_visualizations_to_pdf(pdf)
         pdf.output(report_path)
         return report_path
@@ -112,6 +124,7 @@ class WiresharkReportGenerator:
                 scan_candidates[key]['timestamps'].append(ts)
             except:
                 continue
+
         port_scans = []
         for (src, dst), data in scan_candidates.items():
             if len(data['ports']) >= port_threshold:
@@ -132,31 +145,39 @@ class WiresharkReportGenerator:
                           for p in packet_data if 'timestamp' in p]
             if not timestamps:
                 return {}
+
             timestamps.sort()
             bins = pd.date_range(start=timestamps[0], end=timestamps[-1], freq='1min')
             hist = pd.cut(pd.Series(timestamps), bins=bins).value_counts().sort_index()
+
             if len(hist) < 2:
                 return {}
+
             mean = hist.mean()
             std = hist.std()
             threshold = mean + 3 * std
             spikes = hist[hist > threshold]
+
             return {
                 'traffic_spikes': len(spikes),
                 'max_spike': hist.max(),
                 'average': mean,
                 'std_deviation': std
             }
-        except:
+        except Exception as e:
+            logger.error(f"Error in _analyze_traffic_patterns: {e}")
             return {}
 
     def _create_protocol_pie_chart(self, packet_data):
         protocols = self._analyze_protocols(packet_data)
-        plt.figure(figsize=(10, 8))
-        plt.pie(protocols.values(), labels=protocols.keys(), autopct='%1.1f%%')
-        plt.title('Protocol Distribution')
-        plt.savefig(os.path.join(self.output_dir, 'protocol_distribution.png'))
-        plt.close()
+        try:
+            plt.figure(figsize=(10, 8))
+            plt.pie(protocols.values(), labels=protocols.keys(), autopct='%1.1f%%')
+            plt.title('Protocol Distribution')
+            plt.savefig(os.path.join(self.output_dir, 'protocol_distribution.png'))
+            plt.close()
+        except Exception as e:
+            logger.error(f"Error in _create_protocol_pie_chart: {e}")
 
     def _create_traffic_timeline(self, packet_data):
         timestamps = [p.get('timestamp') for p in packet_data if p.get('timestamp')]
@@ -174,53 +195,92 @@ class WiresharkReportGenerator:
             plt.tight_layout()
             plt.savefig(os.path.join(self.output_dir, 'traffic_timeline.png'))
             plt.close()
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Error in _create_traffic_timeline: {e}")
 
     def _create_port_distribution(self, packet_data, top_n=10):
         ports = [p.get('dest_port') for p in packet_data if p.get('dest_port')]
         if not ports:
             return
-        port_counts = Counter(ports)
-        common = port_counts.most_common(top_n)
-        plt.figure(figsize=(12, 6))
-        plt.bar([str(p[0]) for p in common], [p[1] for p in common])
-        plt.title(f'Top {top_n} Destination Ports')
-        plt.xlabel('Port Number')
-        plt.ylabel('Packet Count')
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.output_dir, 'port_distribution.png'))
-        plt.close()
+        try:
+            port_counts = Counter(ports)
+            common = port_counts.most_common(top_n)
+            plt.figure(figsize=(12, 6))
+            plt.bar([str(p[0]) for p in common], [p[1] for p in common])
+            plt.title(f'Top {top_n} Destination Ports')
+            plt.xlabel('Port Number')
+            plt.ylabel('Packet Count')
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            plt.savefig(os.path.join(self.output_dir, 'port_distribution.png'))
+            plt.close()
+        except Exception as e:
+            logger.error(f"Error in _create_port_distribution: {e}")
 
     def _load_blacklisted_ips(self):
-         return {'192.168.1.666', '10.0.0.13'}
+        return {'192.168.1.666', '10.0.0.13'}
 
     def _add_traffic_report_content(self, pdf, report):
-         pdf.set_font(style='B')
-         pdf.cell(200, 10, txt="Traffic Summary", ln=1)
-         pdf.set_font(style='')
-         pdf.cell(200, 10, txt=f"Total Packets: {report['total_packets']}", ln=1)
-         pdf.ln(5)
+        pdf.set_font(style='B')
+        pdf.cell(200, 10, txt="Traffic Summary", ln=1)
+        pdf.set_font(style='')
+        pdf.cell(200, 10, txt=f"Total Packets: {report['total_packets']}", ln=1)
+        pdf.ln(5)
 
-    def _add_security_report_content(self,pdf , report):
-         pdf.set_font(style='B')
-         pdf.cell(200 , 10 , txt="Security Summary" , ln=1)
-         pdf.set_font(style='')
-         pdf.cell(200 , 10 , txt=f"Suspicious Packets: {len(report['suspicious_packets'])}" , ln=1)
-         pdf.cell(200 , 10 , txt=f"Port Scan Attempts: {len(report['port_scan_attempts'])}" , ln=1)
-         pdf.ln(5)
+    def _add_security_report_content(self, pdf, report):
+        pdf.set_font(style='B')
+        pdf.cell(200, 10, txt="Security Summary", ln=1)
+        pdf.set_font(style='')
+        pdf.cell(200, 10, txt=f"Suspicious Packets: {len(report['suspicious_packets'])}", ln=1)
+        pdf.cell(200, 10, txt=f"Port Scan Attempts: {len(report['port_scan_attempts'])}", ln=1)
+        pdf.ln(5)
 
-    def _add_visualizations_to_pdf(self,pdf):
-         for img in ['protocol_distribution.png' , 'traffic_timeline.png' , 'port_distribution.png']:
-             img_path = os.path.join(self.output_dir , img)
-             if os.path.exists(img_path):
-                 pdf.add_page()
-                 pdf.image(img_path,x=10,y=10,w=190)
+    def _add_visualizations_to_pdf(self, pdf):
+        for img in ['protocol_distribution.png', 'traffic_timeline.png', 'port_distribution.png']:
+            img_path = os.path.join(self.output_dir, img)
+            if os.path.exists(img_path):
+                pdf.add_page()
+                pdf.image(img_path, x=10, y=10, w=190)
 
-pcapfile = 'your_pcap_file.pcap'
-try:
-    extraction = pcapkit.extract(fin=pcapfile, store=False, nofile=True, tcp=True, strict=True)
-    # Process extracted data here
-except Exception as e:
-    logger.error(f"Error generating report: {e}")
+    def _detect_dos_attacks(self, packet_data, time_window=60, threshold=1000):
+        ip_counts = defaultdict(int)
+        time_counts = defaultdict(list)
+
+        for packet in packet_data:
+            source_ip = packet.get('source_ip')
+            timestamp = packet.get('timestamp')
+
+            if not source_ip or not timestamp:
+                continue
+
+            try:
+                ts = datetime.fromisoformat(timestamp)
+                ip_counts[source_ip] += 1
+                time_counts[source_ip].append(ts)
+            except ValueError as e:
+                logger.error(f"Error parsing timestamp: {e}")
+                continue
+
+        anomalous_ips = []
+        for ip, timestamps in time_counts.items():
+            if ip_counts[ip] > threshold:
+                start_time = min(timestamps)
+                end_time = max(timestamps)
+                duration = (end_time - start_time).total_seconds()
+
+                if duration <= time_window:
+                    anomalous_ips.append({
+                        'ip': ip,
+                        'count': ip_counts[ip],
+                        'start_time': start_time.isoformat(),
+                        'end_time': end_time.isoformat()
+                    })
+
+        return anomalous_ips
+
+# pcapfile = 'your_pcap_file.pcap'
+# try:
+#     extraction = pcapkit.extract(fin=pcapfile, store=False, nofile=True, tcp=True, strict=True)
+#     # Process extracted data here
+# except Exception as e:
+#     logger.error(f"Error generating report: {e}")

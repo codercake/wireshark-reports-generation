@@ -20,11 +20,11 @@ class NetworkMonitor:
 
     def start_monitoring(self):
         self.is_running = True
-        self.capture = pyshark.LiveCapture(interface=self.interface)
         
         def capture_thread():
             logger.info(f"Starting packet capture on interface: {self.interface}")
             try:
+                self.capture = pyshark.LiveCapture(interface=self.interface)
                 for packet in self.capture.sniff_continuously():
                     if not self.is_running:
                         break
@@ -34,9 +34,10 @@ class NetworkMonitor:
             finally:
                 # Send remaining packets only if the capture was stopped correctly
                 if self.packet_buffer:
-                    self.send_packets_to_express()  
+                    self.send_packets_to_express()
         
         self.capture_thread = threading.Thread(target=capture_thread)
+        self.capture_thread.daemon = True  # Set the thread as a daemon
         self.capture_thread.start()
 
     def stop_monitoring(self):
@@ -47,15 +48,24 @@ class NetworkMonitor:
         
         # Send remaining packets after stopping the capture
         if self.packet_buffer:
-            self.send_packets_to_express()  
+            self.send_packets_to_express()
 
     def process_packet(self, packet):
         try:
             if hasattr(packet, 'ip'):
+                # Safely access fields using getattr to avoid NoneType errors
+                source_ip = getattr(packet.ip, 'src', None)
+                dest_ip = getattr(packet.ip, 'dst', None)
+                
+                # Check for None values before proceeding
+                if source_ip is None or dest_ip is None:
+                    logger.warning("Source or Destination IP is None")
+                    return  # Skip processing this packet
+                
                 packet_data = {
                     'protocol': packet.highest_layer,
-                    'source_ip': packet.ip.src,
-                    'dest_ip': packet.ip.dst,
+                    'source_ip': source_ip,
+                    'dest_ip': dest_ip,
                     'length': int(packet.length),
                     'packet_type': packet.highest_layer,
                     'source_port': getattr(packet.tcp, 'srcport', None) if hasattr(packet, 'tcp') else None,
