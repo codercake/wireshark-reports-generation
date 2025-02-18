@@ -1,70 +1,25 @@
-import React, { useState } from 'react';
-import {
-    Box,
-    Grid,
-    Paper,
-    Typography,
-    Button,
-    Switch,
-    FormControlLabel,
-    Card,
-    CardContent,
-    Chip,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
-    SpeedDial,
-    SpeedDialAction,
-    Snackbar,
-    Alert,
-    LinearProgress
-} from '@mui/material';
-import {
-    NetworkCheck,
-    Speed,
-    Timeline,
-    Security,
-    Warning,
-    CloudDownload,
-    PictureAsPdf,
-    TableChart
-} from '@mui/icons-material';
-import { Line, Doughnut, Radar } from 'react-chartjs-2';
+import React, { useState, useEffect, useRef } from 'react';
+import axios from 'axios';
+import { Box, Grid, Typography, Button, Card, ButtonGroup, TextField, Select, MenuItem } from '@mui/material';
 import { styled } from '@mui/material/styles';
-import { format } from 'date-fns';
-import {
-    Chart as ChartJS,
-    CategoryScale,
-    LinearScale,
-    PointElement,
-    LineElement,
-    Title,
-    Tooltip,
-    Legend,
-    ArcElement,
-    RadialLinearScale
-} from 'chart.js';
+import { Pie, Bar } from 'react-chartjs-2';
+import { FileDownload, FilterList, PlayArrow, Stop } from '@mui/icons-material';
+import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement } from 'chart.js';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable'; // Import autoTable for table generation
+import { toast } from "sonner";
 
-ChartJS.register(
-    CategoryScale,
-    LinearScale,
-    PointElement,
-    LineElement,
-    Title,
-    Tooltip,
-    Legend,
-    ArcElement,
-    RadialLinearScale
-);
+ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement);
 
-const PageContainer = styled(Box)`
-    min-height: 100vh;
-    background: linear-gradient(135deg, #000000 0%, #1a1a1a 100%);
-    position: relative;
-    overflow: hidden;
-    color: white;
-`;
+const PageContainer = styled(Box)({
+    minHeight: '100vh',
+    backgroundColor: '#000000',
+    color: 'white',
+    padding: '16px',
+    display: 'flex',
+    flexDirection: 'column',
+});
 
 const StyledCard = styled(Card)`
     background: rgba(255, 255, 255, 0.05);
@@ -72,345 +27,349 @@ const StyledCard = styled(Card)`
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 16px;
     color: white;
-    transition: all 0.3s ease;
+    padding: 16px;
     height: 100%;
-
-    &:hover {
-        transform: translateY(-5px);
-        background: rgba(255, 255, 255, 0.1);
-    }
+    margin-bottom: 0;
 `;
 
-const GradientButton = styled(Button)`
-    background: linear-gradient(45deg, #2196f3, #21cbf3);
-    color: white;
-    padding: 8px 24px;
-    border-radius: 30px;
-    text-transform: none;
-    font-weight: 600;
-    transition: all 0.3s ease;
+const CaptureButton = styled(Button)(({ isCapturing }) => ({
+    backgroundColor: isCapturing ? '#ff4444' : '#4CAF50',
+    color: 'white',
+    padding: '12px 32px',
+    borderRadius: '30px',
+    textTransform: 'none',
+    fontWeight: 600,
+    width: '180px',
+    '&:hover': {
+        backgroundColor: isCapturing ? '#ff0000' : '#45a049',
+    },
+}));
 
-    &:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(33, 150, 243, 0.3);
-        background: linear-gradient(45deg, #2196f3, #21cbf3);
-    }
+const ExportButton = styled(Button)({
+    backgroundColor: '#2196F3',
+    color: 'white',
+    padding: '12px 32px',
+    borderRadius: '30px',
+    textTransform: 'none',
+    fontWeight: 600,
+    width: '180px',
+    '&:hover': {
+        backgroundColor: '#1976D2',
+    },
+});
+
+const StyledSelect = styled(Select)`
+    width: 100%;
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
 `;
 
-const StyledPaper = styled(Paper)`
-    background: rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: white;
+const StyledTextField = styled(TextField)`
+    background-color: rgba(255, 255, 255, 0.1);
 `;
 
-const LimitModal = styled(Dialog)({
-    '& .MuiDialog-paper': {
-        borderRadius: '12px',
-        padding: '24px',
-        background: 'linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%)',
-        color: 'white'
-    }
+const FilterButton = styled(Button)({
+    backgroundColor: '#FFCE56',
+    color: 'black',
+    padding: '12px 32px',
+    borderRadius: '30px',
+    textTransform: 'none',
+    fontWeight: 600,
+    width: '100%',
 });
 
 const NetworkPulse = () => {
+    const contentRef = useRef(null);
+    
     const [isCapturing, setIsCapturing] = useState(false);
-    const [realTimeUpdates, setRealTimeUpdates] = useState(true);
-    const [reportCount, setReportCount] = useState(0);
-    const [limitModalOpen, setLimitModalOpen] = useState(false);
-    const [successSnackbar, setSuccessSnackbar] = useState(false);
+    
+    const [protocolData] = useState({ datasets: [{ data: [] }] }); // Placeholder for protocol data
+    
+    const [filters, setFilters] = useState({
+        protocol: 'all',
+        portRange: '',
+        ipAddress: '',
+    });
 
-    const dummyStats = {
-        totalPackets: 1234567,
-        packetsPerSecond: 856,
-        bandwidth: '1.2 GB/s',
-        activeConnections: 432,
-        protocols: {
-            'TCP': 45,
-            'UDP': 30,
-            'HTTP': 15,
-            'HTTPS': 8,
-            'DNS': 2
-        },
-        threats: [
-            { severity: 'high', count: 23, type: 'DDoS Attack' },
-            { severity: 'medium', count: 45, type: 'Port Scan' },
-            { severity: 'low', count: 12, type: 'Suspicious Traffic' }
-        ],
-        timeSeries: Array(24).fill().map(() => Math.floor(Math.random() * 1000))
-    };
+   const [capturedData] = useState([]); // Placeholder for captured data
 
-    const chartOptions = {
-        maintainAspectRatio: false,
-        plugins: {
-            legend: {
-                labels: {
-                    color: 'white'
+   // Function to start capturing packets
+   const startCapture = async () => {
+       try {
+           const response = await axios.post('http://localhost:5002/start_capture');
+           setIsCapturing(true);
+           toast.success("Capture started");
+       } catch (error) {
+           console.error('Start capture error:', error);
+           toast.error("Failed to toggle capture");
+       }
+   };
+
+   // Function to stop capturing packets
+   const stopCapture = async () => {
+       try {
+           await axios.post('http://localhost:5002/stop_capture');
+           setIsCapturing(false);
+           toast.success("Capture stopped");
+       } catch (error) {
+           console.error('Stop capture error:', error);
+           toast.error("Failed to toggle capture");
+       }
+   };
+
+   // Function to validate filters
+   const validateFilters = () => {
+       if (filters.ipAddress) {
+           const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+           if (!ipRegex.test(filters.ipAddress)) {
+               toast.error("Invalid IP address format");
+               return false;
+           }
+       }
+
+       if (filters.portRange) {
+           const portRangeRegex = /^\d+(-\d+)?$/;
+           if (!portRangeRegex.test(filters.portRange)) {
+               toast.error("Invalid port range format (e.g., 80 or 80-443)");
+               return false;
+           }
+       }
+       return true;
+   };
+
+   // Function to apply filters
+   const applyFilters = () => {
+       if (!validateFilters()) {
+           toast.error("Failed to apply filters");
+           return;
+       }
+       // Your filtering logic here...
+       toast.success("Filters applied successfully!");
+   };
+
+   // Function to generate PDF
+   const generatePDF = async () => {
+       const pdf = new jsPDF('p', 'mm', 'a4');
+       const pageWidth = pdf.internal.pageSize.getWidth();
+       let yPosition = 10;
+
+       // Add Header
+       pdf.setFillColor(33, 33, 33);
+       pdf.rect(0, 0, pageWidth, 30, 'F');
+       pdf.setTextColor(255, 255, 255);
+       pdf.setFontSize(20);
+       pdf.text('Network Packet Analysis Report', 10, 20);
+
+       // Add Timestamp
+       pdf.setFontSize(12);
+       pdf.text(`Generated: ${new Date().toLocaleString()}`, 10, 40);
+       yPosition = 60;
+
+       // Protocol Distribution Chart
+       if (contentRef.current) {
+           const canvas = await html2canvas(contentRef.current);
+           const chartImage = canvas.toDataURL('image/png');
+           pdf.addImage(chartImage, 'PNG', 10, yPosition, pageWidth - 20, 80);
+           yPosition += 90;
+       }
+
+       // Network Statistics
+       pdf.setFontSize(16);
+       pdf.setTextColor(0, 0, 0);
+       pdf.text('Network Statistics', 10, yPosition);
+       yPosition += 10;
+
+       // Create statistics table
+       const statsData = [
+           ['Protocol', 'Count', 'Percentage'],
+           ...Object.entries(protocolData?.datasets?.[0]?.data || {}).map(([protocol,count]) => {
+               const total = protocolData.datasets[0].data.reduce((a,b) => a + b ,0 );
+               const percentage = ((count / total) * 100).toFixed(2) + '%';
+               return [protocol,count.toString(),percentage];
+           })
+       ];
+
+       autoTable(pdf,{
+            startY:yPosition,
+            head:[statsData[0]],
+            body:statsData.slice(1),
+            theme:'grid',
+            styles:{fontSize :10},
+            headStyles:{fillColor:[33 ,150 ,243]}
+        });
+
+        yPosition=pdf.lastAutoTable.finalY +20;
+
+        // Port Analysis
+        pdf.setFontSize(16);
+        pdf.text('Port Analysis',10,yPosition);
+        yPosition +=10;
+
+        // Add captured data summary
+        if (capturedData.length >0){
+            const portData=capturedData.reduce((acc,data)=>{
+                if(data.port){
+                    acc[data.port]=(acc[data.port] ||0)+1;
                 }
-            }
-        },
-        scales: {
-            x: {
-                grid: {
-                    color: 'rgba(255, 255, 255, 0.1)'
-                },
-                ticks: {
-                    color: 'white'
-                }
-            },
-            y: {
-                grid: {
-                    color: 'rgba(255, 255, 255, 0.1)'
-                },
-                ticks: {
-                    color: 'white'
-                }
-            }
+                return acc;
+            },{});
+
+            const topPorts=Object.entries(portData)
+                .sort(([,a],[ ,b])=>b-a)
+                .slice(0 ,5);
+
+            autoTable(pdf,{
+                startY:yPosition,
+                head:[['Port','Frequency']],
+                body : topPorts.map(([port,count])=>[port,count]),
+                theme:'grid',
+                styles:{fontSize :10},
+                headStyles:{fillColor:[33 ,150 ,243]}
+            });
         }
-    };
 
-    const protocolChart = {
-        labels: Object.keys(dummyStats.protocols),
-        datasets: [{
-            data: Object.values(dummyStats.protocols),
-            backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'],
-            borderWidth: 1
-        }]
-    };
-
-    const networkLoadChart = {
-        labels: Array(24).fill().map((_, i) => format(new Date().setHours(i), 'HH:mm')),
-        datasets: [{
-            label: 'Network Load',
-            data: dummyStats.timeSeries,
-            fill: true,
-            borderColor: '#36A2EB',
-            backgroundColor: 'rgba(54, 162, 235, 0.2)',
-            tension: 0.4
-        }]
-    };
-
-    const threatRadarChart = {
-        labels: ['DDoS', 'Port Scan', 'Malware', 'Data Leak', 'Intrusion'],
-        datasets: [{
-            label: 'Threat Distribution',
-            data: [65, 59, 90, 81, 56],
-            backgroundColor: 'rgba(255, 99, 132, 0.2)',
-            borderColor: 'rgb(255, 99, 132)',
-            pointBackgroundColor: 'rgb(255, 99, 132)',
-        }]
-    };
-
-    const handleReportGeneration = (type) => {
-        if (reportCount < 2) {
-            setReportCount(reportCount + 1);
-            setSuccessSnackbar(true);
-        } else {
-            setLimitModalOpen(true);
+        // Add footer
+        const pageCount=pdf.internal.getNumberOfPages();
+        for(let i=1;i<=pageCount;i++){
+            pdf.setPage(i);
+            pdf.setFontSize(10);
+            pdf.setTextColor(100);
+            pdf.text(
+                `Page ${i} of ${pageCount}`,
+                pdf.internal.pageSize.getWidth()/2,
+                pdf.internal.pageSize.getHeight()-10,
+                {align:'center'}
+            );
         }
-    };
 
-    return (
-        <PageContainer>
-            <Box p={3}>
-                {/* Header Section */}
-                <Grid container spacing={3} mb={3}>
-                    <Grid item xs={12}>
-                        <StyledPaper sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Box display="flex" alignItems="center">
-                                <NetworkCheck sx={{ mr: 1, color: '#2196f3' }} />
-                                <Typography variant="h5">Network Monitoring Dashboard</Typography>
-                            </Box>
-                            <Box display="flex" alignItems="center" gap={2}>
-                                <FormControlLabel
-                                    control={
-                                        <Switch 
-                                            checked={realTimeUpdates} 
-                                            onChange={() => setRealTimeUpdates(!realTimeUpdates)}
-                                            sx={{
-                                                '& .MuiSwitch-switchBase.Mui-checked': {
-                                                    color: '#2196f3'
-                                                }
-                                            }}
-                                        />
-                                    }
-                                    label="Real-time Updates"
-                                />
-                                <GradientButton
-                                    variant="contained"
-                                    onClick={() => setIsCapturing(!isCapturing)}
-                                    startIcon={isCapturing ? <Speed /> : <Timeline />}
-                                >
-                                    {isCapturing ? "Stop Capture" : "Start Capture"}
-                                </GradientButton>
-                            </Box>
-                        </StyledPaper>
-                    </Grid>
-                </Grid>
+        return pdf.save('Network_Analysis_Report.pdf');
+   };
 
-                {/* Stats Cards */}
-                <Grid container spacing={3} mb={3}>
-                    {[
-                        { icon: <Speed />, title: 'Packets/Sec', value: dummyStats.packetsPerSecond },
-                        { icon: <NetworkCheck />, title: 'Total Packets', value: dummyStats.totalPackets },
-                        { icon: <Timeline />, title: 'Bandwidth', value: dummyStats.bandwidth },
-                        { icon: <Security />, title: 'Active Connections', value: dummyStats.activeConnections }
-                    ].map((stat, index) => (
-                        <Grid item xs={12} sm={6} md={3} key={index}>
-                            <StyledCard>
-                                <CardContent>
-                                    <Box display="flex" alignItems="center" mb={2}>
-                                        {stat.icon}
-                                        <Typography variant="h6" ml={1}>{stat.title}</Typography>
-                                    </Box>
-                                    <Typography variant="h4">{stat.value}</Typography>
-                                    <LinearProgress 
-                                        variant="determinate" 
-                                        value={75} 
-                                        sx={{ 
-                                            mt: 2,
-                                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                                            '& .MuiLinearProgress-bar': {
-                                                background: 'linear-gradient(45deg, #2196f3, #21cbf3)'
-                                            }
-                                        }} 
-                                    />
-                                </CardContent>
-                            </StyledCard>
-                        </Grid>
-                    ))}
-                </Grid>
+   return (
+      <PageContainer>
+          <Grid container spacing={0}>
+              <Grid item xs={12}>
+                  <StyledCard>
+                      <Typography variant="h5" gutterBottom>
+                          Network Analysis Capture
+                      </Typography>
+                      <ButtonGroup fullWidth>
+                          <CaptureButton onClick={isCapturing ? stopCapture : startCapture} isCapturing={isCapturing}>
+                              {isCapturing ? <Stop /> : <PlayArrow />}
+                              {isCapturing ? 'Stop Capture' : 'Start Capture'}
+                          </CaptureButton>
+                          <ExportButton onClick={generatePDF}>
+                              <FileDownload />
+                              Export to PDF
+                          </ExportButton>
+                      </ButtonGroup>
+                  </StyledCard>
+              </Grid>
+              
+              <Grid item xs={12} md={4}>
+                  <StyledCard>
+                      <Typography variant="h6">Filter Settings</Typography>
+                      <Box mb={1}>
+                          <StyledSelect
+                              value={filters.protocol}
+                              onChange={(e) => setFilters({ ...filters, protocol: e.target.value })}
+                          >
+                              <MenuItem value="all">All Protocols</MenuItem>
+                              <MenuItem value="http">HTTP</MenuItem>
+                              <MenuItem value="https">HTTPS</MenuItem>
+                              <MenuItem value="dns">DNS</MenuItem>
+                          </StyledSelect>
+                      </Box>
+                      <Box mb={1}>
+                          <StyledTextField
+                              label="IP Address"
+                              value={filters.ipAddress}
+                              onChange={(e) => setFilters({ ...filters, ipAddress: e.target.value })}
+                              fullWidth
+                          />
+                      </Box>
+                      <Box mb={1}>
+                          <StyledTextField
+                              label="Port Range"
+                              value={filters.portRange}
+                              onChange={(e) => setFilters({ ...filters, portRange: e.target.value })}
+                              fullWidth
+                          />
+                      </Box>
+                      <FilterButton onClick={applyFilters} variant="contained" fullWidth>
+                          Apply Filters
+                      </FilterButton>
+                  </StyledCard>
+              </Grid>
 
-                {/* Charts Section */}
-                <Grid container spacing={3}>
-                    <Grid item xs={12} md={8}>
-                        <StyledCard>
-                            <CardContent>
-                                <Typography variant="h6" mb={2}>Network Traffic Analysis</Typography>
-                                <Box height={400}>
-                                    <Line data={networkLoadChart} options={chartOptions} />
-                                </Box>
-                            </CardContent>
-                        </StyledCard>
-                    </Grid>
+                           {/* Additional Cards for Charts and Data Display */}
+                           <Grid item xs={12} md={8}>
+                  <StyledCard ref={contentRef}>
+                      <Typography variant="h6">Analysis Report</Typography>
 
-                    <Grid item xs={12} md={4}>
-                        <StyledCard>
-                            <CardContent>
-                                <Typography variant="h6" mb={2}>Protocol Distribution</Typography>
-                                <Box height={400}>
-                                    <Doughnut data={protocolChart} options={{ ...chartOptions, scales: undefined }} />
-                                </Box>
-                            </CardContent>
-                        </StyledCard>
-                    </Grid>
+                      {/* Example Pie Chart for Protocol Distribution */}
+                      {protocolData.datasets[0].data.length > 0 && (
+                          <Box mb={3}>
+                              <Typography variant="subtitle1">Protocol Distribution</Typography>
+                              <Pie data={protocolData} />
+                          </Box>
+                      )}
 
-                    <Grid item xs={12} md={6}>
-                        <StyledCard>
-                            <CardContent>
-                                <Typography variant="h6" mb={2}>Threat Analysis</Typography>
-                                <Box height={400}>
-                                    <Radar data={threatRadarChart} options={{ ...chartOptions, scales: undefined }} />
-                                </Box>
-                            </CardContent>
-                        </StyledCard>
-                    </Grid>
+                      {/* Example Bar Chart for Packet Sizes */}
+                      {capturedData.length > 0 && (
+                          <Box mb={3}>
+                              <Typography variant="subtitle1">Packet Sizes</Typography>
+                              <Bar
+                                  data={{
+                                      labels: capturedData.map((_, index) => `Packet ${index + 1}`),
+                                      datasets: [
+                                          {
+                                              label: 'Packet Size (Bytes)',
+                                              data: capturedData.map(packet => packet.size), // Assuming each packet has a size property
+                                              backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                                              borderColor: 'rgba(75, 192, 192, 1)',
+                                              borderWidth: 1,
+                                          },
+                                      ],
+                                  }}
+                              />
+                          </Box>
+                      )}
 
-                    <Grid item xs={12} md={6}>
-                        <StyledCard>
-                            <CardContent>
-                                <Typography variant="h6" mb={2}>Active Threats</Typography>
-                                <Box display="flex" flexDirection="column" gap={2}>
-                                    {dummyStats.threats.map((threat, index) => (
-                                        <StyledPaper key={index} sx={{ p: 2 }}>
-                                            <Box display="flex" justifyContent="space-between" alignItems="center">
-                                                <Box display="flex" alignItems="center" gap={1}>
-                                                    <Warning color="error" />
-                                                    <Typography>{threat.type}</Typography>
-                                                </Box>
-                                                <Chip
-                                                    label={`${threat.count} incidents`}
-                                                    sx={{
-                                                        background: 'linear-gradient(45deg, #2196f3, #21cbf3)',
-                                                        color: 'white'
-                                                    }}
-                                                />
-                                            </Box>
-                                        </StyledPaper>
-                                    ))}
-                                </Box>
-                            </CardContent>
-                        </StyledCard>
-                    </Grid>
-                </Grid>
+                      {/* Raw Packet Data Display */}
+                      {capturedData.length > 0 && (
+                          <Box>
+                              <Typography variant="subtitle1">Raw Packet Data</Typography>
+                              <Box sx={{ overflowX: 'auto', marginTop: '10px' }}>
+                                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                      <thead>
+                                          <tr style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)' }}>
+                                              <th style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>Packet No.</th>
+                                              <th style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>Size (Bytes)</th>
+                                              <th style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>Protocol</th>
+                                              {/* Add more columns as needed */}
+                                          </tr>
+                                      </thead>
+                                      <tbody>
+                                          {capturedData.map((packet, index) => (
+                                              <tr key={index} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                                                  <td style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>{index + 1}</td>
+                                                  <td style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>{packet.size}</td> {/* Assuming packet has a size property */}
+                                                  <td style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>{packet.protocol}</td> {/* Assuming packet has a protocol property */}
+                                                  {/* Add more cells as needed */}
+                                              </tr>
+                                          ))}
+                                      </tbody>
+                                  </table>
+                              </Box>
+                          </Box>
+                      )}
+                  </StyledCard>
+              </Grid>
 
-                {/* Report Generation SpeedDial */}
-                <Box position="fixed" bottom={20} right={20}>
-                    <SpeedDial
-                        ariaLabel="Export Options"
-                        icon={<CloudDownload />}
-                        direction="up"
-                        sx={{
-                            '& .MuiFab-primary': {
-                                background: 'linear-gradient(45deg, #2196f3, #21cbf3)',
-                                '&:hover': {
-                                    background: 'linear-gradient(45deg, #2196f3, #21cbf3)',
-                                }
-                            }
-                        }}
-                    >
-                        <SpeedDialAction
-                            icon={<PictureAsPdf />}
-                            tooltipTitle={`Export as PDF (${reportCount}/2)`}
-                            onClick={() => handleReportGeneration('PDF')}
-                        />
-                        <SpeedDialAction
-                            icon={<TableChart />}
-                            tooltipTitle={`Export as CSV (${reportCount}/2)`}
-                            onClick={() => handleReportGeneration('CSV')}
-                        />
-                    </SpeedDial>
-                </Box>
-
-                {/* Report Limit Modal */}
-                <LimitModal 
-                    open={limitModalOpen} 
-                    onClose={() => setLimitModalOpen(false)}
-                >
-                    <DialogTitle>
-                        <Typography variant="h6">Report Generation Limit</Typography>
-                    </DialogTitle>
-                    <DialogContent>
-                        <Typography>You can only generate 2 reports per day.</Typography>
-                    </DialogContent>
-                    <DialogActions>
-                        <GradientButton onClick={() => setLimitModalOpen(false)}>
-                            Got it
-                        </GradientButton>
-                    </DialogActions>
-                </LimitModal>
-
-                {/* Success Snackbar */}
-                <Snackbar
-                    open={successSnackbar}
-                    autoHideDuration={3000}
-                    onClose={() => setSuccessSnackbar(false)}
-                >
-                    <Alert 
-                        onClose={() => setSuccessSnackbar(false)} 
-                        severity="success"
-                        sx={{ 
-                            width: '100%',
-                            background: 'linear-gradient(45deg, #2196f3, #21cbf3)',
-                            color: 'white'
-                        }}
-                    >
-                        Report generated successfully! ({reportCount}/2 for today)
-                    </Alert>
-                </Snackbar>
-            </Box>
-        </PageContainer>
-    );
+          </Grid>
+      </PageContainer>
+   );
 };
 
 export default NetworkPulse;
