@@ -4,21 +4,43 @@ import json
 import logging
 import threading
 from datetime import datetime
+import netifaces
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def get_default_interface():
+    try:
+        if os.name == 'posix':
+            default_gw = netifaces.gateways()['default']
+            if default_gw and netifaces.AF_INET in default_gw:
+                return default_gw[netifaces.AF_INET][1]
+            return 'eth0'
+        elif os.name == 'nt':
+            return 'Ethernet'
+        else:
+            return 'en0'
+    except Exception as e:
+        logger.warning(f"Error detecting default interface: {e}")
+        return 'eth0'
+
 class NetworkMonitor:
-    def __init__(self, interface='en0'):
-        self.interface = interface
+    def __init__(self, interface=None):
+        self.interface = interface or get_default_interface()
         self.capture = None
         self.is_running = False
         self.packet_buffer = []
         self.captured_packets = []
         self.express_url = 'http://localhost:5001/api/packets/batch'
+        self.capture_thread = None
+        logger.info(f"Initialized NetworkMonitor with interface: {self.interface}")
 
     def start_monitoring(self):
+        if self.is_running:
+            logger.warning("Monitoring is already running")
+            return
+
         self.is_running = True
         
         def capture_thread():
@@ -31,37 +53,44 @@ class NetworkMonitor:
                     self.process_packet(packet)
             except Exception as e:
                 logger.error(f"Capture error: {e}")
+                self.is_running = False
             finally:
-                # Send remaining packets only if the capture was stopped correctly
                 if self.packet_buffer:
                     self.send_packets_to_express()
+                logger.info("Capture thread terminated")
         
         self.capture_thread = threading.Thread(target=capture_thread)
-        self.capture_thread.daemon = True  # Set the thread as a daemon
+        self.capture_thread.daemon = True
         self.capture_thread.start()
+        logger.info("Monitoring started successfully")
 
     def stop_monitoring(self):
+        if not self.is_running:
+            logger.warning("Monitoring is not running")
+            return
+
         self.is_running = False
         if self.capture:
             self.capture.close()
-        logger.info("Packet capture stopped")
         
-        # Send remaining packets after stopping the capture
+        if self.capture_thread:
+            self.capture_thread.join(timeout=2)
+        
         if self.packet_buffer:
             self.send_packets_to_express()
+        
+        logger.info("Packet capture stopped successfully")
 
     def process_packet(self, packet):
         try:
             if hasattr(packet, 'ip'):
-                # Safely access fields using getattr to avoid NoneType errors
                 source_ip = getattr(packet.ip, 'src', None)
                 dest_ip = getattr(packet.ip, 'dst', None)
                 
-                # Check for None values before proceeding
-                if source_ip is None or dest_ip is None:
-                    logger.warning("Source or Destination IP is None")
-                    return  # Skip processing this packet
-                
+                if not all([source_ip, dest_ip]):
+                    logger.debug("Skipping packet with missing IP information")
+                    return
+
                 packet_data = {
                     'protocol': packet.highest_layer,
                     'source_ip': source_ip,
@@ -72,32 +101,52 @@ class NetworkMonitor:
                     'dest_port': getattr(packet.tcp, 'dstport', None) if hasattr(packet, 'tcp') else None,
                     'timestamp': datetime.now().isoformat()
                 }
-                # Append to buffers
+
                 self.packet_buffer.append(packet_data)
                 self.captured_packets.append(packet_data)
-                logger.info(f"Captured packet: {packet_data}")  # Log captured packet
                 
-                # Send packets to express if buffer reaches a certain size
                 if len(self.packet_buffer) >= 100:
                     self.send_packets_to_express()
+                
         except Exception as e:
             logger.error(f"Error processing packet: {e}")
 
     def send_packets_to_express(self):
-        if self.packet_buffer:
-            try:
-                response = requests.post(
-                    self.express_url,
-                    json=self.packet_buffer,
-                    headers={'Content-Type': 'application/json'}
-                )
-                if response.status_code == 201:
-                    logger.info(f"Successfully sent {len(self.packet_buffer)} packets to Express")
-                    self.packet_buffer = []  # Clear the buffer after sending
-                else:
-                    logger.error(f"Failed to send packets. Status: {response.status_code}")
-            except Exception as e:
-                logger.error(f"Error sending packets to Express: {e}")
+        if not self.packet_buffer:
+            return
+
+        try:
+            response = requests.post(
+                self.express_url,
+                json=self.packet_buffer,
+                headers={'Content-Type': 'application/json'},
+                timeout=5  # Add timeout
+            )
+            
+            if response.status_code == 201:
+                logger.info(f"Successfully sent {len(self.packet_buffer)} packets to Express")
+                self.packet_buffer = []
+            else:
+                logger.error(f"Failed to send packets. Status: {response.status_code}, Response: {response.text}")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error sending packets to Express: {e}")
 
     def get_captured_packets(self):
         return self.captured_packets
+
+    def get_interface_info(self):
+        return {
+            'current_interface': self.interface,
+            'is_running': self.is_running,
+            'captured_packets_count': len(self.captured_packets),
+            'buffered_packets_count': len(self.packet_buffer)
+        }
+
+    @staticmethod
+    def get_available_interfaces():
+        try:
+            capture = pyshark.LiveCapture()
+            return capture.interfaces
+        except Exception as e:
+            logger.error(f"Error getting available interfaces: {e}")
+            return []

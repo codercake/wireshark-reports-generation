@@ -12,7 +12,8 @@ import {
     Select,
     MenuItem,
     FormControl,
-    InputLabel
+    InputLabel,
+    useMediaQuery // Import useMediaQuery
 } from '@mui/material';
 import { motion } from 'framer-motion';
 import { Line, Radar } from 'react-chartjs-2';
@@ -60,8 +61,11 @@ const PageContainer = styled(Box)`
   min-height: 100vh;
   background: linear-gradient(135deg, #000000 0%, #1a1a1a 100%);
   position: relative;
-  overflow: hidden;
+  overflow: auto;
   color: white;
+  width: 100vw; /* Make it span the entire viewport width */
+  margin: 0; /* Reset any default margins */
+  padding: 0; /* Reset any default padding */
 `;
 
 const StyledCard = styled(motion(Card))`
@@ -69,10 +73,11 @@ const StyledCard = styled(motion(Card))`
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
-  padding: 24px;
+  padding: ${props => props.isSmallScreen ? '16px' : '24px'}; /* Reduced padding on smaller screens */
   height: 100%;
   color: white;
   transition: all 0.3s ease;
+  margin: 0; /* Reset card margins */
 
   &:hover {
     transform: translateY(-5px);
@@ -81,7 +86,7 @@ const StyledCard = styled(motion(Card))`
 `;
 
 const MetricBox = styled(motion.div)`
-  padding: 20px;
+  padding: ${props => props.isSmallScreen ? '10px' : '20px'}; /* Reduced padding on smaller screens */
   text-align: center;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.05);
@@ -141,13 +146,14 @@ const Reports = () => {
         avgLatency: 0
     });
     const [anomalies, setAnomalies] = useState([]);
-    const [startCapture, setStartCapture] = useState(false);  // New state
     const [anomalyThreshold, setAnomalyThreshold] = useState(10000); // Configurable threshold
     const [timeRange, setTimeRange] = useState('all'); // Filtering
     const [sortBy, setSortBy] = useState('timestamp'); // Sorting
     const [sortOrder, setSortOrder] = useState('desc');
     const [trafficChartImage, setTrafficChartImage] = useState(null);
 
+    const theme = useTheme();
+    const isSmallScreen = useMediaQuery(theme.breakpoints.down('sm'));
 
     const threatRadarChart = {
         labels: ['DDoS', 'Port Scan', 'Malware', 'Data Leak', 'Intrusion'],
@@ -176,14 +182,9 @@ const Reports = () => {
         }
     };
 
-    const fetchReports = async (capture = false) => {
+    const fetchReports = async () => {
         setIsRefreshing(true);
         try {
-            if (capture) {
-                console.log("Starting new capture");
-                await axios.post('http://localhost:5002/api/start_capture'); // Start capture
-
-            }
             const response = await axios.get('http://localhost:5002/api/reports');
             let data = response.data;
 
@@ -224,8 +225,6 @@ const Reports = () => {
                 }
                 return 0;
             });
-
-
             setReports(data);
             calculateNetworkStats(data);
             detectAnomalies(data);
@@ -262,13 +261,6 @@ const Reports = () => {
         return () => clearInterval(interval);
     }, []);
 
-    useEffect(() => {
-        if (startCapture) {
-            fetchReports(true);
-            setStartCapture(false);
-        }
-    }, [startCapture]);
-
     const metrics = [
         { icon: <Cloud/>, value: networkStats.totalData, label: 'Total Data', color: '#2196f3' },
         { icon: <Speed/>, value: networkStats.totalPackets, label: 'Total Packets', color: '#21cbf3' },
@@ -288,7 +280,8 @@ const Reports = () => {
     };
 
     const chartOptions = {
-        maintainAspectRatio: false,
+        maintainAspectRatio: !isSmallScreen, // Disable aspect ratio on smaller screens
+        responsive: true, // Ensure the chart is responsive
         plugins: {
             legend: {
                 labels: { color: 'white' }
@@ -312,16 +305,11 @@ const Reports = () => {
         setIsRefreshing(false);
     };
 
-    const handleStartCapture = () => {
-        setStartCapture(true);
-    };
-
-
     const exportToPdf = async () => {
         const doc = new jsPDF();
-        doc.text("Real-Time Network Analysis Report", 10, 10);
+        doc.text("Network Analysis Report", 10, 10);
 
-        // Add real-time network statistics
+        // Add network statistics
         let yOffset = 20;
         doc.text(`Total Data: ${networkStats.totalData}`, 10, yOffset);
         yOffset += 10;
@@ -330,8 +318,8 @@ const Reports = () => {
         doc.text(`Average Latency: ${networkStats.avgLatency}`, 10, yOffset);
         yOffset += 10;
 
-        // Real-time Anomaly/Threat Alerts
-        doc.text("Real-Time Threat Alerts:", 10, yOffset);
+        // Anomaly/Threat Alerts
+        doc.text("Threat Alerts:", 10, yOffset);
         yOffset += 10;
         if (anomalies.length > 0) {
             anomalies.forEach((anomaly, index) => {
@@ -349,7 +337,7 @@ const Reports = () => {
             yOffset += 110;
         }
 
-        // Real-Time Traffic Data Table
+        // Traffic Data Table
         const tableColumn = ["Timestamp", "Total Packets", "Average Latency"];
         const tableRows = reports.map(report => [
             new Date(report.timestamp).toLocaleString(),
@@ -361,9 +349,14 @@ const Reports = () => {
             head: [tableColumn],
             body: tableRows,
             startY: yOffset + 10, // Add some space after anomalies
+            columnStyles: { // Added this
+                0: { cellWidth: 50 }, // Timestamp column
+                1: { cellWidth: 30 },  // Total Packets
+                2: { cellWidth: 30 },   // Average Latency
+            },
         });
 
-        doc.save("realtime_network_report.pdf");
+        doc.save("network_report.pdf");
     };
 
     const handleExport = async (format) => {
@@ -409,19 +402,13 @@ const Reports = () => {
 
     return (
         <PageContainer>
-            <Container maxWidth="lg">
-                <Box sx={{ p: 4 }}>
-                    <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
+             <Box sx={{ p: 4 }}>
+                    <Box display="flex" justifyContent="space-between" alignItems="center" mb={4} flexDirection={isSmallScreen ? 'column' : 'row'}>
                         <Typography variant="h4">Network Reports</Typography>
                         <Box>
                             <IconButton onClick={handleRefresh} sx={{ color: 'white' }}>
                                 <Refresh sx={{ animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }}/>
                             </IconButton>
-                            <Tooltip title="Start New Capture">
-                                <IconButton onClick={handleStartCapture} sx={{ color: 'white' }}>
-                                    <Security/>
-                                </IconButton>
-                            </Tooltip>
                             <Tooltip title="Export to PDF">
                                 <IconButton onClick={exportToPdf} sx={{ color: 'white' }}>
                                     <FileDownload/>
@@ -433,9 +420,9 @@ const Reports = () => {
                     <Grid container spacing={3}>
                         {/* Configuration Options */}
                         <Grid item xs={12} md={12} lg={12}>
-                            <StyledCard>
+                            <StyledCard isSmallScreen={isSmallScreen}> {/* Pass screen size prop */}
                                 <Typography variant="h6" mb={2}>Configuration Options</Typography>
-                                <Box display="flex" flexDirection="row" gap={2} alignItems="center">
+                                <Box display="flex" flexDirection={isSmallScreen ? 'column' : 'row'} gap={2} alignItems="center">
                                     {/* Anomaly Threshold */}
                                     <TextField
                                         label="Anomaly Threshold (Packets)"
@@ -451,7 +438,6 @@ const Reports = () => {
                                             style: { color: 'white' }
                                         }}
                                     />
-
                                     {/* Time Range Filter */}
                                     <FormControl variant="outlined" size="small" sx={{ minWidth: 150, backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
                                         <InputLabel id="time-range-label" style={{ color: 'white' }}>Time Range</InputLabel>
@@ -469,7 +455,6 @@ const Reports = () => {
                                             <MenuItem value="last7Days">Last 7 Days</MenuItem>
                                         </Select>
                                     </FormControl>
-
                                     {/* Sort By */}
                                     <FormControl variant="outlined" size="small" sx={{ minWidth: 150, backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
                                         <InputLabel id="sort-by-label" style={{ color: 'white' }}>Sort By</InputLabel>
@@ -486,7 +471,6 @@ const Reports = () => {
                                             <MenuItem value="average_latency">Average Latency</MenuItem>
                                         </Select>
                                     </FormControl>
-
                                     {/* Sort Order */}
                                     <FormControl variant="outlined" size="small" sx={{ minWidth: 120, backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
                                         <InputLabel id="sort-order-label" style={{ color: 'white' }}>Sort Order</InputLabel>
@@ -506,73 +490,91 @@ const Reports = () => {
                             </StyledCard>
                         </Grid>
 
+                        {/* Metrics Overview */}
                         {metrics.map((metric, index) => (
                             <Grid item xs={12} sm={6} md={3} key={index}>
-                                <MetricBox
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                >
-                                    <Box sx={{ color: metric.color, mb: 1 }}>{metric.icon}</Box>
-                                    <Typography variant="h4" fontWeight="bold" sx={{ color: metric.color }}>
-                                        {metric.value}
-                                    </Typography>
-                                    <Typography color="white" opacity={0.8}>{metric.label}</Typography>
+                                <MetricBox isSmallScreen={isSmallScreen} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}> {/* Pass screen size prop */}
+                                    {metric.icon}
+                                    <Typography variant="h6">{metric.value}</Typography>
+                                    <Typography variant="body2" color="textSecondary">{metric.label}</Typography>
                                 </MetricBox>
                             </Grid>
                         ))}
 
+                        {/* Traffic Analysis Chart */}
                         <Grid item xs={12} md={8}>
-                            <StyledCard>
-                                <Typography variant="h6" mb={3}>Traffic Overview</Typography>
-                                <Box height={400} className="traffic-chart-container">
+                            <StyledCard isSmallScreen={isSmallScreen}> {/* Pass screen size prop */}
+                                <Typography variant="h6" mb={2}>Network Traffic Analysis</Typography>
+                                <div className="traffic-chart-container" style={{ height: isSmallScreen ? '300px' : '400px' }}>
                                     <Line data={trafficData} options={chartOptions}/>
-                                </Box>
+                                </div>
                             </StyledCard>
                         </Grid>
 
+                        {/* Threat Radar Chart */}
                         <Grid item xs={12} md={4}>
-                            <StyledCard>
-                                <Typography variant="h6" mb={3}>Threat Analysis</Typography>
-                                <Box height={400}>
+                            <StyledCard isSmallScreen={isSmallScreen}> {/* Pass screen size prop */}
+                                <Typography variant="h6" mb={2}>Threat Distribution</Typography>
+                                <div style={{ height: isSmallScreen ? '300px' : '400px' }}>
                                     <Radar data={threatRadarChart} options={radarOptions}/>
-                                </Box>
+                                </div>
                             </StyledCard>
                         </Grid>
 
+                        {/* Real-Time Anomaly/Threat Alerts */}
                         <Grid item xs={12}>
-                            <StyledCard>
-                                <Typography variant="h6" mb={3}>Real-Time Threat/Anomaly Alerts</Typography>
+                            <StyledCard isSmallScreen={isSmallScreen}> {/* Pass screen size prop */}
+                                <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                                    <Typography variant="h6">Anomaly/Threat Alerts</Typography>
+                                    <Typography variant="body2" color="textSecondary">
+                                        Threshold: {anomalyThreshold} packets
+                                    </Typography>
+                                </Box>
                                 {anomalies.length > 0 ? (
                                     anomalies.map((anomaly, index) => (
                                         <AnomalyItem key={index}>
                                             <Warning sx={{ marginRight: 1 }}/>
-                                            Potential Threat: High traffic on {new Date(anomaly.timestamp).toLocaleString()} (Packets: {anomaly.total_packets}, Latency: {anomaly.average_latency}ms)
+                                            Potential Threat: High traffic detected on {new Date(anomaly.timestamp).toLocaleString()} (Packets: {anomaly.total_packets}, Latency: {anomaly.average_latency}ms)
                                         </AnomalyItem>
                                     ))
                                 ) : (
-                                    <Typography>No immediate threats detected.</Typography>
+                                    <Typography variant="body2">No anomalies detected.</Typography>
                                 )}
                             </StyledCard>
                         </Grid>
+
+                        {/* Data Table */}
                         <Grid item xs={12}>
-                            <StyledCard>
-                                <Typography variant="h6" mb={3}>Export Reports</Typography>
-                                <Box display="flex" justifyContent="space-around">
-                                    <ExportButton onClick={() => handleExport('html')} disabled={isRefreshing}>
-                                        <FileDownload sx={{ marginRight: 1 }}/> HTML
-                                    </ExportButton>
-                                    <ExportButton onClick={() => handleExport('csv')} disabled={isRefreshing}>
-                                        <FileDownload sx={{ marginRight: 1 }}/> CSV
-                                    </ExportButton>
-                                    <ExportButton onClick={exportToPdf} disabled={isRefreshing}>
-                                        <FileDownload sx={{ marginRight: 1 }}/> PDF
-                                    </ExportButton>
-                                </Box>
+                            <StyledCard isSmallScreen={isSmallScreen}> {/* Pass screen size prop */}
+                                <Typography variant="h6" mb={2}>Traffic Data</Typography>
+                                {reports.length > 0 ? (
+                                    <div style={{ overflowX: 'auto' }}> {/* Horizontal scroll on small screens */}
+                                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                            <thead>
+                                            <tr>
+                                                <th style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)', textAlign: 'left' }}>Timestamp</th>
+                                                <th style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)', textAlign: 'left' }}>Total Packets</th>
+                                                <th style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)', textAlign: 'left' }}>Average Latency</th>
+                                            </tr>
+                                            </thead>
+                                            <tbody>
+                                            {reports.map((report, index) => (
+                                                <tr key={index}>
+                                                    <td style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>{new Date(report.timestamp).toLocaleString()}</td>
+                                                    <td style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>{report.total_packets}</td>
+                                                    <td style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>{report.average_latency}</td>
+                                                </tr>
+                                            ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                ) : (
+                                    <Typography variant="body2">No data available.</Typography>
+                                )}
                             </StyledCard>
                         </Grid>
                     </Grid>
                 </Box>
-            </Container>
         </PageContainer>
     );
 };

@@ -1,375 +1,445 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Box, Grid, Typography, Button, Card, ButtonGroup, TextField, Select, MenuItem } from '@mui/material';
+import {
+    Box, Grid, Typography, Button, Card, TextField,
+    Select, MenuItem, IconButton, Tooltip, Alert
+} from '@mui/material';
 import { styled } from '@mui/material/styles';
-import { Pie, Bar } from 'react-chartjs-2';
-import { FileDownload, FilterList, PlayArrow, Stop } from '@mui/icons-material';
-import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement } from 'chart.js';
+import { Pie, Line } from 'react-chartjs-2';
+import { PictureAsPdf, TableChart, Code, Refresh } from '@mui/icons-material';
+import { Chart as ChartJS } from 'chart.js/auto';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable'; // Import autoTable for table generation
+import { CSVDownload } from 'react-csv';
 import { toast } from "sonner";
 
-ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement);
+const API_ENDPOINT = 'http://localhost:5002';
 
-const PageContainer = styled(Box)({
-    minHeight: '100vh',
-    backgroundColor: '#000000',
-    color: 'white',
-    padding: '16px',
-    display: 'flex',
-    flexDirection: 'column',
-});
-
-const StyledCard = styled(Card)`
-    background: rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 16px;
-    color: white;
-    padding: 16px;
-    height: 100%;
-    margin-bottom: 0;
-`;
-
-const CaptureButton = styled(Button)(({ isCapturing }) => ({
-    backgroundColor: isCapturing ? '#ff4444' : '#4CAF50',
-    color: 'white',
-    padding: '12px 32px',
-    borderRadius: '30px',
-    textTransform: 'none',
-    fontWeight: 600,
-    width: '180px',
-    '&:hover': {
-        backgroundColor: isCapturing ? '#ff0000' : '#45a049',
-    },
+// Styled Components
+const PageContainer = styled(Box)(({ theme }) => ({
+    padding: theme.spacing(3),
+    backgroundColor: theme.palette.background.default
 }));
 
-const ExportButton = styled(Button)({
-    backgroundColor: '#2196F3',
-    color: 'white',
-    padding: '12px 32px',
-    borderRadius: '30px',
-    textTransform: 'none',
-    fontWeight: 600,
-    width: '180px',
+const StyledCard = styled(Card)(({ theme }) => ({
+    padding: theme.spacing(2),
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column'
+}));
+
+const ExportButton = styled(IconButton)(({ theme }) => ({
+    color: theme.palette.common.white,
+    backgroundColor: theme.palette.primary.main + '20',
+    marginLeft: theme.spacing(1),
     '&:hover': {
-        backgroundColor: '#1976D2',
-    },
-});
+        backgroundColor: theme.palette.primary.main + '40'
+    }
+}));
 
-const StyledSelect = styled(Select)`
-    width: 100%;
-    background-color: rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-`;
-
-const StyledTextField = styled(TextField)`
-    background-color: rgba(255, 255, 255, 0.1);
-`;
-
-const FilterButton = styled(Button)({
-    backgroundColor: '#FFCE56',
-    color: 'black',
-    padding: '12px 32px',
-    borderRadius: '30px',
-    textTransform: 'none',
-    fontWeight: 600,
-    width: '100%',
+const ChartContainer = styled(Box)({
+    height: 300,
+    marginBottom: 20,
+    padding: '10px',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: '8px'
 });
 
 const NetworkPulse = () => {
-    const contentRef = useRef(null);
-    
-    const [isCapturing, setIsCapturing] = useState(false);
-    
-    const [protocolData] = useState({ datasets: [{ data: [] }] }); // Placeholder for protocol data
-    
-    const [filters, setFilters] = useState({
-        protocol: 'all',
-        portRange: '',
-        ipAddress: '',
+    // State Management
+    const [captureStatus, setCaptureStatus] = useState('stopped');
+    const [networkData, setNetworkData] = useState({
+        packets: [],
+        protocols: {},
+        timeSeriesData: [],
+        anomalies: []
     });
+    const [filters, setFilters] = useState({
+        ipRange: '',
+        portRange: '',
+        protocol: 'all',
+        timeRange: '1h'
+    });
+    const [isFiltersValid, setIsFiltersValid] = useState(true);
+    const [showCSV, setShowCSV] = useState(false);
 
-   const [capturedData] = useState([]); // Placeholder for captured data
+    // Chart Data
+    const protocolChartData = {
+        labels: Object.keys(networkData.protocols),
+        datasets: [{
+            data: Object.values(networkData.protocols),
+            backgroundColor: [
+                '#FF6384', '#36A2EB', '#FFCE56', 
+                '#4BC0C0', '#9966FF', '#FF9F40'
+            ]
+        }]
+    };
 
-   // Function to start capturing packets
-   const startCapture = async () => {
-       try {
-           const response = await axios.post('http://localhost:5002/start_capture');
-           setIsCapturing(true);
-           toast.success("Capture started");
-       } catch (error) {
-           console.error('Start capture error:', error);
-           toast.error("Failed to toggle capture");
-       }
-   };
+    const timeSeriesData = {
+        labels: networkData.timeSeriesData.map(d => new Date(d.timestamp).toLocaleTimeString()),
+        datasets: [{
+            label: 'Traffic Volume',
+            data: networkData.timeSeriesData.map(d => d.value),
+            borderColor: '#36A2EB',
+            fill: false,
+            tension: 0.4
+        }]
+    };
 
-   // Function to stop capturing packets
-   const stopCapture = async () => {
-       try {
-           await axios.post('http://localhost:5002/stop_capture');
-           setIsCapturing(false);
-           toast.success("Capture stopped");
-       } catch (error) {
-           console.error('Stop capture error:', error);
-           toast.error("Failed to toggle capture");
-       }
-   };
+    // Functions
+    const validateFilters = () => {
+        const ipRegex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
+        const portRegex = /^\d+(-\d+)?$/;
 
-   // Function to validate filters
-   const validateFilters = () => {
-       if (filters.ipAddress) {
-           const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
-           if (!ipRegex.test(filters.ipAddress)) {
-               toast.error("Invalid IP address format");
-               return false;
-           }
-       }
-
-       if (filters.portRange) {
-           const portRangeRegex = /^\d+(-\d+)?$/;
-           if (!portRangeRegex.test(filters.portRange)) {
-               toast.error("Invalid port range format (e.g., 80 or 80-443)");
-               return false;
-           }
-       }
-       return true;
-   };
-
-   // Function to apply filters
-   const applyFilters = () => {
-       if (!validateFilters()) {
-           toast.error("Failed to apply filters");
-           return;
-       }
-       // Your filtering logic here...
-       toast.success("Filters applied successfully!");
-   };
-
-   // Function to generate PDF
-   const generatePDF = async () => {
-       const pdf = new jsPDF('p', 'mm', 'a4');
-       const pageWidth = pdf.internal.pageSize.getWidth();
-       let yPosition = 10;
-
-       // Add Header
-       pdf.setFillColor(33, 33, 33);
-       pdf.rect(0, 0, pageWidth, 30, 'F');
-       pdf.setTextColor(255, 255, 255);
-       pdf.setFontSize(20);
-       pdf.text('Network Packet Analysis Report', 10, 20);
-
-       // Add Timestamp
-       pdf.setFontSize(12);
-       pdf.text(`Generated: ${new Date().toLocaleString()}`, 10, 40);
-       yPosition = 60;
-
-       // Protocol Distribution Chart
-       if (contentRef.current) {
-           const canvas = await html2canvas(contentRef.current);
-           const chartImage = canvas.toDataURL('image/png');
-           pdf.addImage(chartImage, 'PNG', 10, yPosition, pageWidth - 20, 80);
-           yPosition += 90;
-       }
-
-       // Network Statistics
-       pdf.setFontSize(16);
-       pdf.setTextColor(0, 0, 0);
-       pdf.text('Network Statistics', 10, yPosition);
-       yPosition += 10;
-
-       // Create statistics table
-       const statsData = [
-           ['Protocol', 'Count', 'Percentage'],
-           ...Object.entries(protocolData?.datasets?.[0]?.data || {}).map(([protocol,count]) => {
-               const total = protocolData.datasets[0].data.reduce((a,b) => a + b ,0 );
-               const percentage = ((count / total) * 100).toFixed(2) + '%';
-               return [protocol,count.toString(),percentage];
-           })
-       ];
-
-       autoTable(pdf,{
-            startY:yPosition,
-            head:[statsData[0]],
-            body:statsData.slice(1),
-            theme:'grid',
-            styles:{fontSize :10},
-            headStyles:{fillColor:[33 ,150 ,243]}
-        });
-
-        yPosition=pdf.lastAutoTable.finalY +20;
-
-        // Port Analysis
-        pdf.setFontSize(16);
-        pdf.text('Port Analysis',10,yPosition);
-        yPosition +=10;
-
-        // Add captured data summary
-        if (capturedData.length >0){
-            const portData=capturedData.reduce((acc,data)=>{
-                if(data.port){
-                    acc[data.port]=(acc[data.port] ||0)+1;
-                }
-                return acc;
-            },{});
-
-            const topPorts=Object.entries(portData)
-                .sort(([,a],[ ,b])=>b-a)
-                .slice(0 ,5);
-
-            autoTable(pdf,{
-                startY:yPosition,
-                head:[['Port','Frequency']],
-                body : topPorts.map(([port,count])=>[port,count]),
-                theme:'grid',
-                styles:{fontSize :10},
-                headStyles:{fillColor:[33 ,150 ,243]}
-            });
+        if (filters.ipRange && !ipRegex.test(filters.ipRange)) {
+            toast.error("Invalid IP range format (e.g., 192.168.1.0/24)");
+            setIsFiltersValid(false);
+            return false;
         }
 
-        // Add footer
-        const pageCount=pdf.internal.getNumberOfPages();
-        for(let i=1;i<=pageCount;i++){
-            pdf.setPage(i);
+        if (filters.portRange && !portRegex.test(filters.portRange)) {
+            toast.error("Invalid port range format (e.g., 80-443)");
+            setIsFiltersValid(false);
+            return false;
+        }
+
+        setIsFiltersValid(true);
+        return true;
+    };
+
+    const exportToPDF = async () => {
+        try {
+            // Create PDF in landscape mode for better chart visibility
+            const pdf = new jsPDF('landscape', 'mm', 'a4');
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+    
+            // Set background and improve quality
+            const options = {
+                scale: 3, // Increase quality
+                useCORS: true,
+                backgroundColor: '#ffffff',
+                logging: false,
+                windowWidth: 1200, // Fixed width for consistent rendering
+                windowHeight: 800
+            };
+    
+            // Capture protocol chart
+            const protocolChart = document.getElementById('protocol-chart');
+            const protocolCanvas = await html2canvas(protocolChart, options);
+            const protocolImgData = protocolCanvas.toDataURL('image/png');
+    
+            // Capture time series chart
+            const timeSeriesChart = document.getElementById('timeseries-chart');
+            const timeSeriesCanvas = await html2canvas(timeSeriesChart, options);
+            const timeSeriesImgData = timeSeriesCanvas.toDataURL('image/png');
+    
+            // Add title and metadata
+            pdf.setFontSize(20);
+            pdf.text('Network Traffic Analysis Report', 15, 15);
             pdf.setFontSize(10);
-            pdf.setTextColor(100);
-            pdf.text(
-                `Page ${i} of ${pageCount}`,
-                pdf.internal.pageSize.getWidth()/2,
-                pdf.internal.pageSize.getHeight()-10,
-                {align:'center'}
-            );
+            pdf.text(`Generated: ${new Date().toLocaleString()}`, 15, 22);
+    
+            // Calculate dimensions for charts
+            const chartWidth = pageWidth / 2 - 20;
+            const chartHeight = 70;
+    
+            // Add protocol chart
+            pdf.addImage(protocolImgData, 'PNG', 15, 30, chartWidth, chartHeight);
+            pdf.setFontSize(12);
+            pdf.text('Protocol Distribution', 15, 25);
+    
+            // Add time series chart
+            pdf.addImage(timeSeriesImgData, 'PNG', pageWidth/2 + 5, 30, chartWidth, chartHeight);
+            pdf.text('Traffic Over Time', pageWidth/2 + 5, 25);
+    
+            // Add statistics
+            pdf.setFontSize(14);
+            pdf.text('Network Statistics', 15, 120);
+            
+            const stats = [
+                `Total Packets: ${networkData.packets.length}`,
+                `Active Protocols: ${Object.keys(networkData.protocols).length}`,
+                `Anomalies Detected: ${networkData.anomalies.length}`
+            ];
+    
+            stats.forEach((stat, index) => {
+                pdf.setFontSize(11);
+                pdf.text(stat, 20, 130 + (index * 8));
+            });
+    
+            // Save PDF
+            pdf.save(`network_analysis_${Date.now()}.pdf`);
+            toast.success("PDF exported successfully");
+        } catch (error) {
+            toast.error("PDF export failed: " + error.message);
         }
+    };
+    
 
-        return pdf.save('Network_Analysis_Report.pdf');
-   };
+    const handleExport = async (format) => {
+        try {
+            if (format === 'pdf') {
+                await exportToPDF();
+            } else {
+                const response = await axios.get(`${API_ENDPOINT}/export/${format}`, {
+                    params: filters,
+                    responseType: 'blob'
+                });
 
-   return (
-      <PageContainer>
-          <Grid container spacing={0}>
-              <Grid item xs={12}>
-                  <StyledCard>
-                      <Typography variant="h5" gutterBottom>
-                          Network Analysis Capture
-                      </Typography>
-                      <ButtonGroup fullWidth>
-                          <CaptureButton onClick={isCapturing ? stopCapture : startCapture} isCapturing={isCapturing}>
-                              {isCapturing ? <Stop /> : <PlayArrow />}
-                              {isCapturing ? 'Stop Capture' : 'Start Capture'}
-                          </CaptureButton>
-                          <ExportButton onClick={generatePDF}>
-                              <FileDownload />
-                              Export to PDF
-                          </ExportButton>
-                      </ButtonGroup>
-                  </StyledCard>
-              </Grid>
-              
-              <Grid item xs={12} md={4}>
-                  <StyledCard>
-                      <Typography variant="h6">Filter Settings</Typography>
-                      <Box mb={1}>
-                          <StyledSelect
-                              value={filters.protocol}
-                              onChange={(e) => setFilters({ ...filters, protocol: e.target.value })}
-                          >
-                              <MenuItem value="all">All Protocols</MenuItem>
-                              <MenuItem value="http">HTTP</MenuItem>
-                              <MenuItem value="https">HTTPS</MenuItem>
-                              <MenuItem value="dns">DNS</MenuItem>
-                          </StyledSelect>
-                      </Box>
-                      <Box mb={1}>
-                          <StyledTextField
-                              label="IP Address"
-                              value={filters.ipAddress}
-                              onChange={(e) => setFilters({ ...filters, ipAddress: e.target.value })}
-                              fullWidth
-                          />
-                      </Box>
-                      <Box mb={1}>
-                          <StyledTextField
-                              label="Port Range"
-                              value={filters.portRange}
-                              onChange={(e) => setFilters({ ...filters, portRange: e.target.value })}
-                              fullWidth
-                          />
-                      </Box>
-                      <FilterButton onClick={applyFilters} variant="contained" fullWidth>
-                          Apply Filters
-                      </FilterButton>
-                  </StyledCard>
-              </Grid>
+                const blob = new Blob([response.data], {
+                    type: format === 'csv' ? 'text/csv' : 'text/html'
+                });
 
-                           {/* Additional Cards for Charts and Data Display */}
-                           <Grid item xs={12} md={8}>
-                  <StyledCard ref={contentRef}>
-                      <Typography variant="h6">Analysis Report</Typography>
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `network_analysis_${Date.now()}.${format}`;
+                link.click();
+                window.URL.revokeObjectURL(url);
+                toast.success(`${format.toUpperCase()} exported successfully`);
+            }
+        } catch (error) {
+            toast.error(`Failed to export ${format}`);
+        }
+    };
 
-                      {/* Example Pie Chart for Protocol Distribution */}
-                      {protocolData.datasets[0].data.length > 0 && (
-                          <Box mb={3}>
-                              <Typography variant="subtitle1">Protocol Distribution</Typography>
-                              <Pie data={protocolData} />
-                          </Box>
-                      )}
+    const handleCaptureToggle = async () => {
+        if (!validateFilters()) return;
 
-                      {/* Example Bar Chart for Packet Sizes */}
-                      {capturedData.length > 0 && (
-                          <Box mb={3}>
-                              <Typography variant="subtitle1">Packet Sizes</Typography>
-                              <Bar
-                                  data={{
-                                      labels: capturedData.map((_, index) => `Packet ${index + 1}`),
-                                      datasets: [
-                                          {
-                                              label: 'Packet Size (Bytes)',
-                                              data: capturedData.map(packet => packet.size), // Assuming each packet has a size property
-                                              backgroundColor: 'rgba(75, 192, 192, 0.6)',
-                                              borderColor: 'rgba(75, 192, 192, 1)',
-                                              borderWidth: 1,
-                                          },
-                                      ],
-                                  }}
-                              />
-                          </Box>
-                      )}
+        try {
+            const newStatus = captureStatus === 'capturing' ? 'stopped' : 'capturing';
+            await axios.post(`${API_ENDPOINT}/${newStatus === 'capturing' ? 'start' : 'stop'}_capture`, filters);
+            setCaptureStatus(newStatus);
+        } catch (error) {
+            toast.error(`Failed to ${captureStatus === 'capturing' ? 'stop' : 'start'} capture`);
+        }
+    };
 
-                      {/* Raw Packet Data Display */}
-                      {capturedData.length > 0 && (
-                          <Box>
-                              <Typography variant="subtitle1">Raw Packet Data</Typography>
-                              <Box sx={{ overflowX: 'auto', marginTop: '10px' }}>
-                                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                      <thead>
-                                          <tr style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)' }}>
-                                              <th style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>Packet No.</th>
-                                              <th style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>Size (Bytes)</th>
-                                              <th style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>Protocol</th>
-                                              {/* Add more columns as needed */}
-                                          </tr>
-                                      </thead>
-                                      <tbody>
-                                          {capturedData.map((packet, index) => (
-                                              <tr key={index} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                                                  <td style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>{index + 1}</td>
-                                                  <td style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>{packet.size}</td> {/* Assuming packet has a size property */}
-                                                  <td style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>{packet.protocol}</td> {/* Assuming packet has a protocol property */}
-                                                  {/* Add more cells as needed */}
-                                              </tr>
-                                          ))}
-                                      </tbody>
-                                  </table>
-                              </Box>
-                          </Box>
-                      )}
-                  </StyledCard>
-              </Grid>
+    const handleApplyFilters = () => {
+        if (validateFilters()) {
+            toast.success("Filters applied successfully");
+            if (captureStatus === 'capturing') {
+                fetchData();
+            }
+        }
+    };
 
-          </Grid>
-      </PageContainer>
-   );
+    const fetchData = async () => {
+        try {
+            const response = await axios.get(`${API_ENDPOINT}/network_data`, {
+                params: filters
+            });
+            setNetworkData(response.data);
+        } catch (error) {
+            toast.error("Failed to fetch network data");
+        }
+    };
+
+    useEffect(() => {
+        let interval;
+        if (captureStatus === 'capturing') {
+            interval = setInterval(fetchData, 1000);
+        }
+        return () => clearInterval(interval);
+    }, [captureStatus, filters]);
+
+    // Render Component
+    return (
+        <PageContainer>
+            <Grid container spacing={3}>
+                <Grid item xs={12}>
+                    <StyledCard>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+                            <Typography variant="h5">Network Protocol Analyzer</Typography>
+                            <Box>
+                                <Button
+                                    variant="contained"
+                                    color={captureStatus === 'capturing' ? 'error' : 'success'}
+                                    onClick={handleCaptureToggle}
+                                    sx={{ mr: 2 }}
+                                >
+                                    {captureStatus === 'capturing' ? 'Stop Capture' : 'Start Capture'}
+                                </Button>
+                                
+                                <Tooltip title="Export as PDF">
+                                    <ExportButton onClick={() => handleExport('pdf')}>
+                                        <PictureAsPdf />
+                                    </ExportButton>
+                                </Tooltip>
+                                <Tooltip title="Export as CSV">
+                                    <ExportButton onClick={() => handleExport('csv')}>
+                                        <TableChart />
+                                    </ExportButton>
+                                </Tooltip>
+                                <Tooltip title="Export as HTML">
+                                    <ExportButton onClick={() => handleExport('html')}>
+                                        <Code />
+                                    </ExportButton>
+                                </Tooltip>
+                                <Tooltip title="Refresh Data">
+                                    <ExportButton onClick={fetchData}>
+                                        <Refresh />
+                                    </ExportButton>
+                                </Tooltip>
+                            </Box>
+                        </Box>
+
+                        <Grid container spacing={2}>
+                            <Grid item xs={12} md={3}>
+                                <StyledCard>
+                                    <Typography variant="h6" gutterBottom>Filters</Typography>
+                                    <TextField
+                                        fullWidth
+                                        label="IP Range"
+                                        value={filters.ipRange}
+                                        onChange={(e) => setFilters({ ...filters, ipRange: e.target.value })}
+                                        placeholder="192.168.1.0/24"
+                                        sx={{ mb: 2 }}
+                                    />
+                                    <TextField
+                                        fullWidth
+                                        label="Port Range"
+                                        value={filters.portRange}
+                                        onChange={(e) => setFilters({ ...filters, portRange: e.target.value })}
+                                        placeholder="80-443"
+                                        sx={{ mb: 2 }}
+                                    />
+                                    <Select
+                                        fullWidth
+                                        value={filters.protocol}
+                                        onChange={(e) => setFilters({ ...filters, protocol: e.target.value })}
+                                        sx={{ mb: 2 }}
+                                    >
+                                        <MenuItem value="all">All Protocols</MenuItem>
+                                        <MenuItem value="tcp">TCP</MenuItem>
+                                        <MenuItem value="udp">UDP</MenuItem>
+                                        <MenuItem value="icmp">ICMP</MenuItem>
+                                        <MenuItem value="http">HTTP</MenuItem>
+                                        <MenuItem value="https">HTTPS</MenuItem>
+                                        <MenuItem value="dns">DNS</MenuItem>
+                                    </Select>
+                                    <Select
+                                        fullWidth
+                                        value={filters.timeRange}
+                                        onChange={(e) => setFilters({ ...filters, timeRange: e.target.value })}
+                                        sx={{ mb: 2 }}
+                                    >
+                                        <MenuItem value="1h">Last Hour</MenuItem>
+                                        <MenuItem value="6h">Last 6 Hours</MenuItem>
+                                        <MenuItem value="24h">Last 24 Hours</MenuItem>
+                                        <MenuItem value="7d">Last 7 Days</MenuItem>
+                                    </Select>
+                                    <Button
+                                        fullWidth
+                                        variant="contained"
+                                        color="primary"
+                                        onClick={handleApplyFilters}
+                                    >
+                                        Apply Filters
+                                    </Button>
+                                </StyledCard>
+                            </Grid>
+
+                            <Grid item xs={12} md={9}>
+                                <div id="visualization-section">
+                                    <Grid container spacing={2}>
+                                        <Grid item xs={12} md={6}>
+                                            <ChartContainer>
+                                                <Typography variant="h6" gutterBottom>
+                                                    Protocol Distribution
+                                                </Typography>
+                                                <div id="protocol-chart">
+                                                    <Pie 
+                                                        data={protocolChartData} 
+                                                        options={{
+                                                            responsive: true,
+                                                            maintainAspectRatio: false,
+                                                            plugins: {
+                                                                legend: {
+                                                                    position: 'bottom'
+                                                                }
+                                                            }
+                                                        }} 
+                                                    />
+                                                </div>
+                                            </ChartContainer>
+                                        </Grid>
+                                        <Grid item xs={12} md={6}>
+                                            <ChartContainer>
+                                                <Typography variant="h6" gutterBottom>
+                                                    Traffic Over Time
+                                                </Typography>
+                                                <div id="timeseries-chart">
+                                                    <Line 
+                                                        data={timeSeriesData} 
+                                                        options={{
+                                                            responsive: true,
+                                                            maintainAspectRatio: false,
+                                                            scales: {
+                                                                y: {
+                                                                    beginAtZero: true
+                                                                }
+                                                            },
+                                                            plugins: {
+                                                                legend: {
+                                                                    position: 'bottom'
+                                                                }
+                                                            }
+                                                        }} 
+                                                    />
+                                                </div>
+                                            </ChartContainer>
+                                        </Grid>
+                                        <Grid item xs={12}>
+                                            <ChartContainer>
+                                                <Typography variant="h6" gutterBottom>
+                                                    Network Statistics
+                                                </Typography>
+                                                <Grid container spacing={2}>
+                                                    <Grid item xs={4}>
+                                                        <StyledCard>
+                                                            <Typography variant="h4">
+                                                                {networkData.packets.length}
+                                                            </Typography>
+                                                            <Typography>Total Packets</Typography>
+                                                        </StyledCard>
+                                                    </Grid>
+                                                    <Grid item xs={4}>
+                                                        <StyledCard>
+                                                            <Typography variant="h4">
+                                                                {Object.keys(networkData.protocols).length}
+                                                            </Typography>
+                                                            <Typography>Active Protocols</Typography>
+                                                        </StyledCard>
+                                                    </Grid>
+                                                    <Grid item xs={4}>
+                                                        <StyledCard>
+                                                            <Typography variant="h4">
+                                                                {networkData.anomalies.length}
+                                                            </Typography>
+                                                            <Typography>Anomalies Detected</Typography>
+                                                        </StyledCard>
+                                                    </Grid>
+                                                </Grid>
+                                            </ChartContainer>
+                                        </Grid>
+                                    </Grid>
+                                </div>
+                            </Grid>
+                        </Grid>
+                    </StyledCard>
+                </Grid>
+            </Grid>
+            {showCSV && (
+                <CSVDownload
+                    data={networkData}
+                    filename={`network_analysis_${Date.now()}.csv`}
+                    target="_blank"
+                />
+            )}
+        </PageContainer>
+    );
 };
 
 export default NetworkPulse;
