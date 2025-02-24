@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import {
     Box, Grid, Typography, Button, Card, TextField,
-    Select, MenuItem, IconButton, Tooltip, Alert
+    Select, MenuItem, IconButton, Tooltip, Alert, Snackbar
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { Pie, Line } from 'react-chartjs-2';
@@ -14,8 +14,6 @@ import { CSVDownload } from 'react-csv';
 import { toast } from "sonner";
 
 const API_ENDPOINT = 'http://localhost:5002';
-
-// Styled Components
 const PageContainer = styled(Box)(({ theme }) => ({
     padding: theme.spacing(3),
     backgroundColor: theme.palette.background.default
@@ -46,7 +44,6 @@ const ChartContainer = styled(Box)({
 });
 
 const NetworkPulse = () => {
-    // State Management
     const [captureStatus, setCaptureStatus] = useState('stopped');
     const [networkData, setNetworkData] = useState({
         packets: [],
@@ -62,8 +59,12 @@ const NetworkPulse = () => {
     });
     const [isFiltersValid, setIsFiltersValid] = useState(true);
     const [showCSV, setShowCSV] = useState(false);
+    const [alert, setAlert] = useState({
+        open: false,
+        message: '',
+        severity: 'info'
+    });
 
-    // Chart Data
     const protocolChartData = {
         labels: Object.keys(networkData.protocols),
         datasets: [{
@@ -86,76 +87,112 @@ const NetworkPulse = () => {
         }]
     };
 
-    // Functions
+    const showAlert = (message, severity = 'error') => {
+        setAlert({
+            open: true,
+            message,
+            severity
+        });
+    };
+
+    const handleCloseAlert = () => {
+        setAlert({ ...alert, open: false });
+    };
+
     const validateFilters = () => {
-        const ipRegex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
+        const ipRegex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{2})?$/;
         const portRegex = /^\d+(-\d+)?$/;
-
+    
         if (filters.ipRange && !ipRegex.test(filters.ipRange)) {
-            toast.error("Invalid IP range format (e.g., 192.168.1.0/24)");
-            setIsFiltersValid(false);
+            showAlert("Invalid IP Range. Please use format: 192.168.1.0/24");
             return false;
         }
-
+    
         if (filters.portRange && !portRegex.test(filters.portRange)) {
-            toast.error("Invalid port range format (e.g., 80-443)");
-            setIsFiltersValid(false);
+            showAlert("Invalid Port Range. Please use format: 80-443");
             return false;
         }
-
-        setIsFiltersValid(true);
+    
+        if (filters.protocol === '') {
+            showAlert("Protocol Required. Please select a protocol", "warning");
+            return false;
+        }
+    
         return true;
     };
 
     const exportToPDF = async () => {
         try {
-            // Create PDF in landscape mode for better chart visibility
+            toast.info("Generating PDF report...", { 
+                duration: 2000,
+                id: "pdf-export-loading" 
+            });
+            
             const pdf = new jsPDF('landscape', 'mm', 'a4');
             const pageWidth = pdf.internal.pageSize.getWidth();
             const pageHeight = pdf.internal.pageSize.getHeight();
     
-            // Set background and improve quality
-            const options = {
-                scale: 3, // Increase quality
-                useCORS: true,
-                backgroundColor: '#ffffff',
-                logging: false,
-                windowWidth: 1200, // Fixed width for consistent rendering
-                windowHeight: 800
-            };
+            pdf.setFontSize(24);
+            pdf.setTextColor(44, 62, 80);
+            pdf.text('Network Traffic Analysis Report', 15, 20);
     
-            // Capture protocol chart
-            const protocolChart = document.getElementById('protocol-chart');
-            const protocolCanvas = await html2canvas(protocolChart, options);
-            const protocolImgData = protocolCanvas.toDataURL('image/png');
-    
-            // Capture time series chart
-            const timeSeriesChart = document.getElementById('timeseries-chart');
-            const timeSeriesCanvas = await html2canvas(timeSeriesChart, options);
-            const timeSeriesImgData = timeSeriesCanvas.toDataURL('image/png');
-    
-            // Add title and metadata
-            pdf.setFontSize(20);
-            pdf.text('Network Traffic Analysis Report', 15, 15);
-            pdf.setFontSize(10);
-            pdf.text(`Generated: ${new Date().toLocaleString()}`, 15, 22);
-    
-            // Calculate dimensions for charts
-            const chartWidth = pageWidth / 2 - 20;
-            const chartHeight = 70;
-    
-            // Add protocol chart
-            pdf.addImage(protocolImgData, 'PNG', 15, 30, chartWidth, chartHeight);
             pdf.setFontSize(12);
-            pdf.text('Protocol Distribution', 15, 25);
+            pdf.setTextColor(52, 73, 94);
+            const currentDate = new Date().toLocaleString();
+            pdf.text(`Generated: ${currentDate}`, 15, 30);
+            pdf.text(`Time Range: ${filters.timeRange}`, 15, 35);
+            pdf.text(`Protocol Filter: ${filters.protocol}`, 15, 40);
+            pdf.text(`IP Range: ${filters.ipRange || 'All'}`, 15, 45);
+            pdf.text(`Port Range: ${filters.portRange || 'All'}`, 15, 50);
+            
+            pdf.setDrawColor(200, 200, 200);
+            pdf.line(15, 55, pageWidth - 15, 55);
+            
+            const protocolChart = document.getElementById('protocol-chart');
+            const timeSeriesChart = document.getElementById('timeseries-chart');
+            const statsSection = document.getElementById('stats-section');
+            
+            const protocolCanvas = await html2canvas(protocolChart, {
+                scale: 3,
+                backgroundColor: '#ffffff',
+                logging: false
+            });
+            
+            const chartWidth = pageWidth / 2 - 25;
+            const chartHeight = 80;
+            
+            pdf.text('Protocol Distribution', 15, 65);
+            pdf.addImage(
+                protocolCanvas.toDataURL('image/png'),
+                'PNG',
+                15,
+                70,
+                chartWidth,
+                chartHeight
+            );
+            
+            const timeSeriesCanvas = await html2canvas(timeSeriesChart, {
+                scale: 3,
+                backgroundColor: '#ffffff',
+                logging: false
+            });
+            
+            pdf.text('Traffic Over Time', pageWidth / 2 + 5, 65);
+            pdf.addImage(
+                timeSeriesCanvas.toDataURL('image/png'),
+                'PNG',
+                pageWidth / 2 + 5,
+                70,
+                chartWidth,
+                chartHeight
+            );
     
-            // Add time series chart
-            pdf.addImage(timeSeriesImgData, 'PNG', pageWidth/2 + 5, 30, chartWidth, chartHeight);
-            pdf.text('Traffic Over Time', pageWidth/2 + 5, 25);
-    
-            // Add statistics
-            pdf.setFontSize(14);
-            pdf.text('Network Statistics', 15, 120);
+            pdf.setFontSize(18);
+            pdf.text('Network Statistics Summary', 15, 165);
+            
+            pdf.setDrawColor(100, 100, 100);
+            pdf.setFillColor(250, 250, 250);
+            pdf.roundedRect(15, 170, pageWidth - 30, 40, 3, 3, 'FD');
             
             const stats = [
                 `Total Packets: ${networkData.packets.length}`,
@@ -163,25 +200,41 @@ const NetworkPulse = () => {
                 `Anomalies Detected: ${networkData.anomalies.length}`
             ];
     
+            pdf.setFontSize(14);
             stats.forEach((stat, index) => {
-                pdf.setFontSize(11);
-                pdf.text(stat, 20, 130 + (index * 8));
+                const colWidth = (pageWidth - 30) / stats.length;
+                pdf.text(stat, 25 + (colWidth * index), 190);
             });
+            
+            pdf.setFontSize(10);
+            pdf.setTextColor(100, 100, 100);
+            pdf.text(`Network Protocol Analyzer - Report generated on ${currentDate}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
     
-            // Save PDF
             pdf.save(`network_analysis_${Date.now()}.pdf`);
-            toast.success("PDF exported successfully");
+            toast.success("PDF report exported successfully");
         } catch (error) {
-            toast.error("PDF export failed: " + error.message);
+            console.error("PDF export error:", error);
+            toast.error("Failed to export PDF: " + error.message);
         }
     };
-    
 
     const handleExport = async (format) => {
+        if (!validateFilters()) {
+            showAlert("Please correct filter errors before exporting");
+            return;
+        }
+        
+        if (networkData.packets.length === 0) {
+            showAlert("No data available to export. Start a capture first or refresh data.", "warning");
+            return;
+        }
+        
         try {
             if (format === 'pdf') {
                 await exportToPDF();
             } else {
+                toast.loading(`Preparing ${format.toUpperCase()} export...`);
+                
                 const response = await axios.get(`${API_ENDPOINT}/export/${format}`, {
                     params: filters,
                     responseType: 'blob'
@@ -197,71 +250,102 @@ const NetworkPulse = () => {
                 link.download = `network_analysis_${Date.now()}.${format}`;
                 link.click();
                 window.URL.revokeObjectURL(url);
+                
+                toast.dismiss();
                 toast.success(`${format.toUpperCase()} exported successfully`);
             }
         } catch (error) {
-            toast.error(`Failed to export ${format}`);
+            console.error(`Export error (${format}):`, error);
+            toast.dismiss();
+            toast.error(`Failed to export ${format}: ${error.message || 'Unknown error'}`);
         }
     };
 
     const handleCaptureToggle = async () => {
-        if (!validateFilters()) return;
+        if (!validateFilters()) {
+            showAlert("Please correct filter errors before starting capture");
+            return;
+        }
 
         try {
             const newStatus = captureStatus === 'capturing' ? 'stopped' : 'capturing';
             await axios.post(`${API_ENDPOINT}/${newStatus === 'capturing' ? 'start' : 'stop'}_capture`, filters);
             setCaptureStatus(newStatus);
+            
+            if (newStatus === 'capturing') {
+                showAlert("Network capture started successfully", "success");
+                fetchData();
+            } else {
+                showAlert("Network capture stopped", "info");
+            }
         } catch (error) {
-            toast.error(`Failed to ${captureStatus === 'capturing' ? 'stop' : 'start'} capture`);
+            console.error("Capture toggle error:", error);
+            showAlert(`Failed to ${captureStatus === 'capturing' ? 'stop' : 'start'} capture: ${error.message || 'Unknown error'}`);
         }
     };
 
     const handleApplyFilters = () => {
         if (validateFilters()) {
-            toast.success("Filters applied successfully");
+            showAlert("Filters applied successfully", "success");
+            setIsFiltersValid(true);
             if (captureStatus === 'capturing') {
                 fetchData();
             }
+        } else {
+            setIsFiltersValid(false);
         }
     };
 
     const fetchData = async () => {
         try {
+            toast.loading("Fetching network data...", { id: "fetch-data" });
             const response = await axios.get(`${API_ENDPOINT}/network_data`, {
                 params: filters
             });
             setNetworkData(response.data);
+            toast.success("Network data updated", { id: "fetch-data" });
         } catch (error) {
-            toast.error("Failed to fetch network data");
+            console.error("Data fetch error:", error);
+            toast.error("Failed to fetch network data: " + (error.message || 'Unknown error'), { id: "fetch-data" });
         }
     };
 
     useEffect(() => {
-        let interval;
-        if (captureStatus === 'capturing') {
-            interval = setInterval(fetchData, 1000);
-        }
-        return () => clearInterval(interval);
-    }, [captureStatus, filters]);
+        const debouncedValidation = setTimeout(() => {
+            if (filters.ipRange || filters.portRange) {
+                const isValid = validateFilters();
+                setIsFiltersValid(isValid);
+            }
+        }, 500);
+    
+        return () => clearTimeout(debouncedValidation);
+    }, [filters.ipRange, filters.portRange]);
+    
 
-    // Render Component
     return (
         <PageContainer>
+            <Snackbar 
+                open={alert.open} 
+                autoHideDuration={5000} 
+                onClose={handleCloseAlert}
+                anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+            >
+                <Alert 
+                    onClose={handleCloseAlert} 
+                    severity={alert.severity} 
+                    variant="filled"
+                    sx={{ width: '100%' }}
+                >
+                    {alert.message}
+                </Alert>
+            </Snackbar>
+            
             <Grid container spacing={3}>
                 <Grid item xs={12}>
                     <StyledCard>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
                             <Typography variant="h5">Network Protocol Analyzer</Typography>
                             <Box>
-                                <Button
-                                    variant="contained"
-                                    color={captureStatus === 'capturing' ? 'error' : 'success'}
-                                    onClick={handleCaptureToggle}
-                                    sx={{ mr: 2 }}
-                                >
-                                    {captureStatus === 'capturing' ? 'Stop Capture' : 'Start Capture'}
-                                </Button>
-                                
                                 <Tooltip title="Export as PDF">
                                     <ExportButton onClick={() => handleExport('pdf')}>
                                         <PictureAsPdf />
@@ -285,6 +369,12 @@ const NetworkPulse = () => {
                             </Box>
                         </Box>
 
+                        {!isFiltersValid && (
+                            <Alert severity="error" sx={{ mb: 2 }}>
+                                Please correct the filter errors before proceeding
+                            </Alert>
+                        )}
+
                         <Grid container spacing={2}>
                             <Grid item xs={12} md={3}>
                                 <StyledCard>
@@ -296,6 +386,8 @@ const NetworkPulse = () => {
                                         onChange={(e) => setFilters({ ...filters, ipRange: e.target.value })}
                                         placeholder="192.168.1.0/24"
                                         sx={{ mb: 2 }}
+                                        error={filters.ipRange && !isFiltersValid}
+                                        helperText={filters.ipRange && !isFiltersValid ? "Invalid format (use: 192.168.1.0/24)" : ""}
                                     />
                                     <TextField
                                         fullWidth
@@ -304,6 +396,8 @@ const NetworkPulse = () => {
                                         onChange={(e) => setFilters({ ...filters, portRange: e.target.value })}
                                         placeholder="80-443"
                                         sx={{ mb: 2 }}
+                                        error={filters.portRange && !isFiltersValid}
+                                        helperText={filters.portRange && !isFiltersValid ? "Invalid format (use: 80-443)" : ""}
                                     />
                                     <Select
                                         fullWidth
@@ -335,9 +429,11 @@ const NetworkPulse = () => {
                                         variant="contained"
                                         color="primary"
                                         onClick={handleApplyFilters}
+                                        sx={{ mb: 2 }}
                                     >
                                         Apply Filters
                                     </Button>
+    
                                 </StyledCard>
                             </Grid>
 
@@ -396,32 +492,34 @@ const NetworkPulse = () => {
                                                 <Typography variant="h6" gutterBottom>
                                                     Network Statistics
                                                 </Typography>
-                                                <Grid container spacing={2}>
-                                                    <Grid item xs={4}>
-                                                        <StyledCard>
-                                                            <Typography variant="h4">
-                                                                {networkData.packets.length}
-                                                            </Typography>
-                                                            <Typography>Total Packets</Typography>
-                                                        </StyledCard>
+                                                <div id="stats-section">
+                                                    <Grid container spacing={2}>
+                                                        <Grid item xs={4}>
+                                                            <StyledCard>
+                                                                <Typography variant="h4">
+                                                                    {networkData.packets.length}
+                                                                </Typography>
+                                                                <Typography>Total Packets</Typography>
+                                                            </StyledCard>
+                                                        </Grid>
+                                                        <Grid item xs={4}>
+                                                            <StyledCard>
+                                                                <Typography variant="h4">
+                                                                    {Object.keys(networkData.protocols).length}
+                                                                </Typography>
+                                                                <Typography>Active Protocols</Typography>
+                                                            </StyledCard>
+                                                        </Grid>
+                                                        <Grid item xs={4}>
+                                                            <StyledCard>
+                                                                <Typography variant="h4">
+                                                                    {networkData.anomalies.length}
+                                                                </Typography>
+                                                                <Typography>Anomalies Detected</Typography>
+                                                            </StyledCard>
+                                                        </Grid>
                                                     </Grid>
-                                                    <Grid item xs={4}>
-                                                        <StyledCard>
-                                                            <Typography variant="h4">
-                                                                {Object.keys(networkData.protocols).length}
-                                                            </Typography>
-                                                            <Typography>Active Protocols</Typography>
-                                                        </StyledCard>
-                                                    </Grid>
-                                                    <Grid item xs={4}>
-                                                        <StyledCard>
-                                                            <Typography variant="h4">
-                                                                {networkData.anomalies.length}
-                                                            </Typography>
-                                                            <Typography>Anomalies Detected</Typography>
-                                                        </StyledCard>
-                                                    </Grid>
-                                                </Grid>
+                                                </div>
                                             </ChartContainer>
                                         </Grid>
                                     </Grid>
