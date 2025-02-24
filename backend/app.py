@@ -1,23 +1,54 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, render_template
 from flask_cors import CORS
 from services.packet_capture import NetworkMonitor
 from services.report_generator import WiresharkReportGenerator
-from services.ddos_detection import DDoSDetector, TrafficMonitor
+from services.brute_force_detection.detector import BruteForceDetector
 import os
+from flask_pymongo import PyMongo
+from dotenv import load_dotenv
 import json
-import time
 from datetime import datetime
 import logging
 import pandas as pd
 import io
-import pyshark
 import netifaces
 import platform
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
+
+load_dotenv()
+
+class TrafficMonitor:
+    def __init__(self):
+        self.ip_data = {}
+        self.threshold = 100
+        self.alerts = []
+        self.is_monitoring = False
+
+    def start_monitoring(self):
+        self.is_monitoring = True
+
+    def stop_monitoring(self):
+        self.is_monitoring = False
+
+    def get_alerts(self):
+        return self.alerts
+
+    def get_suspicious_ips(self):
+        suspicious_ips = []
+        for ip, data in self.ip_data.items():
+            if data.get('request_count', 0) > self.threshold:
+                suspicious_ips.append(ip)
+        return suspicious_ips
+
+class DDoSDetector:
+    def __init__(self):
+        self.threshold = 100
+
+    def detect_ddos(self, packets):
+        return {"detected": False, "analysis": "No threats detected"}
 
 # Setup logging
 logging.basicConfig(
@@ -28,6 +59,8 @@ logger = logging.getLogger(__name__)
 
 # Initialize Flask app
 app = Flask(__name__)
+app.config["MONGO_URI"] = os.getenv("MONGO_URI", "mongodb://localhost:27017/myDatabase")
+mongo = PyMongo(app)
 CORS(app)
 
 def get_default_interface():
@@ -53,6 +86,7 @@ monitor = None
 report_generator = WiresharkReportGenerator()
 ddos_detector = DDoSDetector()
 traffic_monitor = TrafficMonitor()
+brute_force_detector = BruteForceDetector()
 
 ### Packet Capture Endpoints ###
 
@@ -134,7 +168,6 @@ def analyze_traffic():
         analysis = ddos_detector.detect_ddos(packets)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
-        # Save analysis results
         analysis_path = f'reports/ddos_analysis_{timestamp}.json'
         with open(analysis_path, 'w') as f:
             json.dump(analysis, f)
@@ -223,6 +256,33 @@ def get_reports():
         logger.error(f"Error retrieving reports: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+### Brute Force Detection ###
+
+@app.route('/analyze_brute_force', methods=['POST'])
+def analyze_brute_force():
+    global monitor
+    try:
+        if not monitor:
+            return jsonify({'status': 'error', 'message': 'No active capture'}), 400
+        
+        packets = monitor.get_captured_packets()
+        alerts = brute_force_detector.start_detection(packets)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        analysis_path = f'reports/brute_force_analysis_{timestamp}.json'
+        with open(analysis_path, 'w') as f:
+            json.dump(alerts, f)
+        
+        return jsonify({
+            'status': 'success',
+            'alerts': alerts,
+            'timestamp': timestamp,
+            'saved_path': analysis_path
+        })
+    except Exception as e:
+        logger.error(f"Error analyzing brute force attempts: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 ### Data Export ###
 
 @app.route('/export/<format>', methods=['GET'])
@@ -254,7 +314,6 @@ def export_data(format):
             doc = SimpleDocTemplate(buffer, pagesize=A4)
             elements = []
             
-            # Styles
             styles = getSampleStyleSheet()
             title_style = ParagraphStyle(
                 'CustomTitle',
@@ -263,13 +322,11 @@ def export_data(format):
                 spaceAfter=30
             )
             
-            # Add title and metadata
             elements.append(Paragraph("Network Capture Report", title_style))
             elements.append(Paragraph(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['Normal']))
             elements.append(Paragraph(f"Interface: {DEFAULT_INTERFACE}", styles['Normal']))
             elements.append(Spacer(1, 20))
             
-            # Convert DataFrame to table data
             table_data = [df.columns.tolist()] + df.values.tolist()
             table = Table(table_data, repeatRows=1)
             table.setStyle(TableStyle([
@@ -289,7 +346,6 @@ def export_data(format):
             ]))
             elements.append(table)
             
-            # Add summary
             elements.append(Spacer(1, 20))
             elements.append(Paragraph(f"Total Packets Captured: {len(packets)}", styles['Normal']))
             
@@ -312,14 +368,34 @@ def export_data(format):
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    global monitor, traffic_monitor
+    global monitor, traffic_monitor, brute_force_detector
     return jsonify({
         'status': 'healthy',
         'monitor_active': monitor is not None,
         'ddos_monitor_active': traffic_monitor is not None,
+        'brute_force_detector_active': brute_force_detector is not None,
         'default_interface': DEFAULT_INTERFACE,
         'timestamp': datetime.now().isoformat()
     })
+
+@app.route('/submit_form', methods=['POST'])
+def submit_form():
+    try:
+        data = request.form  # Access form data using request.form
+        name = data.get('name', 'Anonymous')
+        email = data.get('email', 'No email provided')
+        comment = data.get('comment', '')
+
+        logger.info(f"Form data received: Name={name}, Email={email}, Comment={comment}")
+
+        return render_template('form_submission.html', name=name, email=email, comment=comment)  # Render a template
+    except Exception as e:
+        logger.error(f"Error handling form submission: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/form')
+def display_form():
+    return render_template('form.html')
 
 if __name__ == '__main__':
     os.makedirs('reports', exist_ok=True)

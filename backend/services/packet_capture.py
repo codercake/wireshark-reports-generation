@@ -1,3 +1,4 @@
+# backend/services/packet_capture.py
 import pyshark
 import requests
 import json
@@ -5,6 +6,8 @@ import logging
 import threading
 from datetime import datetime
 import netifaces
+import os # Import os module
+from config import Config
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -32,7 +35,7 @@ class NetworkMonitor:
         self.is_running = False
         self.packet_buffer = []
         self.captured_packets = []
-        self.express_url = 'http://localhost:5001/api/packets/batch'
+        self.express_url = 'http://localhost:5001/api/packets/batch'  # Adjust according to your setup
         self.capture_thread = None
         logger.info(f"Initialized NetworkMonitor with interface: {self.interface}")
 
@@ -42,27 +45,27 @@ class NetworkMonitor:
             return
 
         self.is_running = True
-        
-        def capture_thread():
-            logger.info(f"Starting packet capture on interface: {self.interface}")
-            try:
-                self.capture = pyshark.LiveCapture(interface=self.interface)
-                for packet in self.capture.sniff_continuously():
-                    if not self.is_running:
-                        break
-                    self.process_packet(packet)
-            except Exception as e:
-                logger.error(f"Capture error: {e}")
-                self.is_running = False
-            finally:
-                if self.packet_buffer:
-                    self.send_packets_to_express()
-                logger.info("Capture thread terminated")
-        
-        self.capture_thread = threading.Thread(target=capture_thread)
+        self.capture_thread = threading.Thread(target=self._capture_thread)
         self.capture_thread.daemon = True
         self.capture_thread.start()
         logger.info("Monitoring started successfully")
+
+
+    def _capture_thread(self): # Renamed to _capture_thread
+        logger.info(f"Starting packet capture on interface: {self.interface}")
+        try:
+            self.capture = pyshark.LiveCapture(interface=self.interface)
+            for packet in self.capture.sniff_continuously():
+                if not self.is_running:
+                    break
+                self.process_packet(packet)
+        except Exception as e:
+            logger.error(f"Capture error: {e}")
+            self.is_running = False
+        finally:
+            if self.packet_buffer:
+                self.send_packets_to_express()
+            logger.info("Capture thread terminated")
 
     def stop_monitoring(self):
         if not self.is_running:
@@ -70,15 +73,16 @@ class NetworkMonitor:
             return
 
         self.is_running = False
+
         if self.capture:
             self.capture.close()
-        
+
         if self.capture_thread:
-            self.capture_thread.join(timeout=2)
-        
+            self.capture_thread.join(timeout=2)  # Wait for the thread to finish
+
         if self.packet_buffer:
             self.send_packets_to_express()
-        
+
         logger.info("Packet capture stopped successfully")
 
     def process_packet(self, packet):
@@ -86,10 +90,13 @@ class NetworkMonitor:
             if hasattr(packet, 'ip'):
                 source_ip = getattr(packet.ip, 'src', None)
                 dest_ip = getattr(packet.ip, 'dst', None)
-                
+
                 if not all([source_ip, dest_ip]):
                     logger.debug("Skipping packet with missing IP information")
                     return
+
+                # Ensure timestamp is correctly parsed as a datetime object
+                timestamp = datetime.now()
 
                 packet_data = {
                     'protocol': packet.highest_layer,
@@ -99,35 +106,69 @@ class NetworkMonitor:
                     'packet_type': packet.highest_layer,
                     'source_port': getattr(packet.tcp, 'srcport', None) if hasattr(packet, 'tcp') else None,
                     'dest_port': getattr(packet.tcp, 'dstport', None) if hasattr(packet, 'tcp') else None,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': timestamp.isoformat()
                 }
 
                 self.packet_buffer.append(packet_data)
                 self.captured_packets.append(packet_data)
-                
+
                 if len(self.packet_buffer) >= 100:
                     self.send_packets_to_express()
-                
+
+                self.analyze_traffic()
+
         except Exception as e:
             logger.error(f"Error processing packet: {e}")
+
+    def analyze_traffic(self):
+        """Analyze captured packets and make predictions."""
+        # Convert captured packets to appropriate format before extracting features
+        # Ensure timestamps are converted to datetime objects if needed
+        traffic_data = self.captured_packets
+
+        # Placeholder for feature extraction and ML prediction logic
+        # ...
+
+        # Example usage:
+        # features = extract_features(traffic_data)
+        # try:
+        #     response = requests.post(
+        #         f'http://localhost:5000/predict',
+        #         json=features,
+        #         headers={'Content-Type': 'application/json'},
+        #         timeout=5
+        #     )
+        #     if response.status_code == 200:
+        #         prediction_result = response.json()
+        #         logger.info(f"Prediction result: {prediction_result}")
+        #     else:
+        #         logger.error(f"Failed to get prediction. Status: {response.status_code}, Response: {response.text}")
+        # except requests.exceptions.RequestException as e:
+        #     logger.error(f"Error sending request to prediction API: {e}")
+        pass # Replace with your implementation.
 
     def send_packets_to_express(self):
         if not self.packet_buffer:
             return
 
         try:
+            # Send packets to your Flask backend for further processing
+            # Here's how you can send them to the /api/packets/batch endpoint:
+            # Assuming your Flask backend is running on localhost:5000
             response = requests.post(
-                self.express_url,
+                f'http://localhost:5000/api/packets/batch',
                 json=self.packet_buffer,
                 headers={'Content-Type': 'application/json'},
-                timeout=5  # Add timeout
+                timeout=5
             )
-            
+
             if response.status_code == 201:
                 logger.info(f"Successfully sent {len(self.packet_buffer)} packets to Express")
-                self.packet_buffer = []
+                self.packet_buffer = []  # Clear the buffer after successful send
+
             else:
                 logger.error(f"Failed to send packets. Status: {response.status_code}, Response: {response.text}")
+
         except requests.exceptions.RequestException as e:
             logger.error(f"Error sending packets to Express: {e}")
 
