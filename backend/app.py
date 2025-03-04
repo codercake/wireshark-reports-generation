@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify, send_file, render_template
 from flask_cors import CORS
 from services.packet_capture import NetworkMonitor
 from services.report_generator import WiresharkReportGenerator
-from services.brute_force_detection.detector import BruteForceDetector
+from services.attack_detection.brute_force import BruteForceDetector  # Corrected import
 import os
 from flask_pymongo import PyMongo
 from dotenv import load_dotenv
@@ -15,8 +15,12 @@ import netifaces
 import platform
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+import matplotlib.pyplot as plt
+from werkzeug.utils import secure_filename
+import netifaces
+import platform
 
 load_dotenv()
 
@@ -96,17 +100,55 @@ def start_capture():
     try:
         data = request.get_json() if request.is_json else {}
         interface = data.get('interface', DEFAULT_INTERFACE)
-        
+
         logger.info(f"Starting capture on interface: {interface}")
         monitor = NetworkMonitor(interface=interface)
         monitor.start_monitoring()
         traffic_monitor.start_monitoring()
-        
+
+        # Capture the visual data for PDF
+        packets = monitor.get_captured_packets()
+        total_packets = len(packets)
+        protocols = {}
+        for packet in packets:
+            protocol = packet.get('protocol', 'Unknown')
+            protocols[protocol] = protocols.get(protocol, 0) + 1
+
+        # Generate pie chart
+        plt.figure(figsize=(8, 6))
+        plt.pie(list(protocols.values()), labels=list(protocols.keys()), autopct='%1.1f%%', startangle=140)
+        plt.title('Protocol Distribution')
+        plt.savefig('protocol_pie.png', bbox_inches='tight')
+        plt.close()
+
+        # Generate top destination ports bar chart
+        port_counts = {}
+        for packet in packets:
+            port = packet.get('destination_port', 0)
+            port_counts[port] = port_counts.get(port, 0) + 1
+
+        top_ports = sorted(port_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+        plt.figure(figsize=(8, 6))
+        plt.bar([f'Port {port}' for port, _ in top_ports], [count for _, count in top_ports], color='skyblue')
+        plt.title('Top 10 Destination Ports')
+        plt.xlabel('Port')
+        plt.ylabel('Count')
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.savefig('top_ports_bar.png', bbox_inches='tight')
+        plt.close()
+
+        # Return data and file paths for frontend to export as PDF
         return jsonify({
             'status': 'success',
             'message': f'Capture started on interface {interface}',
-            'interface': interface
+            'interface': interface,
+            'total_packets': total_packets,
+            'protocols': protocols,
+            'pie_chart': 'protocol_pie.png',
+            'bar_chart': 'top_ports_bar.png'
         })
+
     except Exception as e:
         logger.error(f"Error starting capture: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -163,15 +205,15 @@ def analyze_traffic():
     try:
         if not monitor:
             return jsonify({'status': 'error', 'message': 'No active capture'}), 400
-        
+
         packets = monitor.get_captured_packets()
         analysis = ddos_detector.detect_ddos(packets)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        
+
         analysis_path = f'reports/ddos_analysis_{timestamp}.json'
         with open(analysis_path, 'w') as f:
             json.dump(analysis, f)
-        
+
         return jsonify({
             'status': 'success',
             'analysis': analysis,
@@ -182,78 +224,43 @@ def analyze_traffic():
         logger.error(f"Error analyzing traffic: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-@app.route('/get_alerts', methods=['GET'])
-def get_alerts():
-    global traffic_monitor
-    try:
-        if traffic_monitor:
-            alerts = traffic_monitor.get_alerts()
-            return jsonify({'status': 'success', 'alerts': alerts})
-        return jsonify({'status': 'error', 'message': 'Traffic monitor not initialized'}), 400
-    except Exception as e:
-        logger.error(f"Error getting alerts: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@app.route('/get_suspicious_ips', methods=['GET'])
-def get_suspicious_ips():
-    global traffic_monitor
-    try:
-        if traffic_monitor:
-            suspicious_ips = traffic_monitor.get_suspicious_ips()
-            return jsonify({'status': 'success', 'suspicious_ips': suspicious_ips})
-        return jsonify({'status': 'error', 'message': 'Traffic monitor not initialized'}), 400
-    except Exception as e:
-        logger.error(f"Error getting suspicious IPs: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-### Report Generation ###
-
-@app.route('/generate_report', methods=['POST'])
-def generate_report():
-    global report_generator
+@app.route('/validate_filters', methods=['POST'])
+def validate_filters():
     try:
         data = request.get_json()
-        report_data = {
-            'start_time': data['startTime'],
-            'end_time': data['endTime'],
-            'report_type': data['reportType']
-        }
+        ip_range = data.get('ipRange', '')
+        port_range = data.get('portRange', '')
+        protocol = data.get('protocol', '')
 
-        packet_data = monitor.get_captured_packets() if monitor else []
-        if not packet_data:
-            return jsonify({'status': 'error', 'message': 'No packets captured.'}), 400
+        errors = []
 
-        report_generator.generate_visualizations(packet_data)
-        report = (report_generator.generate_traffic_report(packet_data) 
-                 if report_data['report_type'] == 'traffic' 
-                 else report_generator.generate_security_report(packet_data))
-        
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        report_path = report_generator.export_to_json(report, f"report_{timestamp}")
+        # Validate IP Range
+        if ip_range:
+            import ipaddress
+            try:
+                ipaddress.ip_network(ip_range, strict=False)
+            except ValueError:
+                errors.append("Invalid IP range.")
 
-        return jsonify({
-            'status': 'success',
-            'report_path': report_path,
-            'report_data': report
-        })
+        # Validate Port Range
+        if port_range:
+            ports = port_range.split(',')
+            for port in ports:
+                if not port.isdigit() or not (0 <= int(port) <= 65535):
+                    errors.append(f"Invalid port: {port}")
+
+        # Validate Protocol
+        valid_protocols = ['tcp', 'udp', 'http', 'https', 'dns', 'all']
+        if protocol and protocol.lower() not in valid_protocols:
+            errors.append(f"Invalid protocol: {protocol}. Valid options are {', '.join(valid_protocols)}.")
+
+        if errors:
+            return jsonify({'status': 'error', 'errors': errors}), 400
+
+        return jsonify({'status': 'success', 'message': 'Filters are valid.'}), 200
+
     except Exception as e:
-        logger.error(f"Error generating report: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@app.route('/api/reports', methods=['GET'])
-def get_reports():
-    try:
-        report_files = os.listdir('reports')
-        reports = []
-        for report_file in report_files:
-            if report_file.endswith('.json'):
-                with open(os.path.join('reports', report_file), 'r') as f:
-                    report_data = json.load(f)
-                    report_data['report_path'] = os.path.join('reports', report_file)
-                    reports.append(report_data)
-        return jsonify(reports)
-    except Exception as e:
-        logger.error(f"Error retrieving reports: {e}")
+        logger.error(f"Error validating filters: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 ### Brute Force Detection ###
@@ -264,15 +271,15 @@ def analyze_brute_force():
     try:
         if not monitor:
             return jsonify({'status': 'error', 'message': 'No active capture'}), 400
-        
+
         packets = monitor.get_captured_packets()
         alerts = brute_force_detector.start_detection(packets)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        
+
         analysis_path = f'reports/brute_force_analysis_{timestamp}.json'
         with open(analysis_path, 'w') as f:
             json.dump(alerts, f)
-        
+
         return jsonify({
             'status': 'success',
             'alerts': alerts,
@@ -289,7 +296,7 @@ def analyze_brute_force():
 def export_data(format):
     global monitor
     try:
-        if not monitor:
+        if not monitor or not monitor.get_captured_packets():
             return jsonify({'error': 'No capture data available'}), 400
 
         packets = monitor.get_captured_packets()
@@ -321,37 +328,57 @@ def export_data(format):
                 fontSize=24,
                 spaceAfter=30
             )
-            
+
+            # Add Title and metadata to report
             elements.append(Paragraph("Network Capture Report", title_style))
             elements.append(Paragraph(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['Normal']))
             elements.append(Paragraph(f"Interface: {DEFAULT_INTERFACE}", styles['Normal']))
             elements.append(Spacer(1, 20))
-            
-            table_data = [df.columns.tolist()] + df.values.tolist()
-            table = Table(table_data, repeatRows=1)
-            table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 12),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
-                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 1), (-1, -1), 10),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ]))
-            elements.append(table)
-            
+
+            # Capture the visual data for PDF
+            packets = monitor.get_captured_packets()
+            total_packets = len(packets)
+            protocols = {}
+            for packet in packets:
+                protocol = packet.get('protocol', 'Unknown')
+                protocols[protocol] = protocols.get(protocol, 0) + 1
+
+            # Generate pie chart
+            plt.figure(figsize=(8, 6))
+            plt.pie(list(protocols.values()), labels=list(protocols.keys()), autopct='%1.1f%%', startangle=140)
+            plt.title('Protocol Distribution')
+            plt.savefig('protocol_pie.png', bbox_inches='tight')
+            plt.close()
+
+            # Generate top destination ports bar chart
+            port_counts = {}
+            for packet in packets:
+                port = packet.get('destination_port', 0)
+                port_counts[port] = port_counts.get(port, 0) + 1
+
+            top_ports = sorted(port_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+            plt.figure(figsize=(8, 6))
+            plt.bar([f'Port {port}' for port, _ in top_ports], [count for _, count in top_ports], color='skyblue')
+            plt.title('Top 10 Destination Ports')
+            plt.xlabel('Port')
+            plt.ylabel('Count')
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            plt.savefig('top_ports_bar.png', bbox_inches='tight')
+            plt.close()
+
+            # Include charts in the report
+            elements.append(Image('protocol_pie.png', width=400, height=300))
             elements.append(Spacer(1, 20))
-            elements.append(Paragraph(f"Total Packets Captured: {len(packets)}", styles['Normal']))
-            
+            elements.append(Image('top_ports_bar.png', width=500, height=350))
+            elements.append(Spacer(1, 20))
+
+            # Total Packets info
+            elements.append(Paragraph(f"Total Packets Captured: {total_packets}", styles['Normal']))
+            elements.append(Spacer(1, 20))
             doc.build(elements)
             buffer.seek(0)
-            
+
             return send_file(
                 buffer,
                 mimetype='application/pdf',
@@ -363,8 +390,6 @@ def export_data(format):
     except Exception as e:
         logger.error(f"Error exporting data: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
-
-### Health Check ###
 
 @app.route('/health', methods=['GET'])
 def health_check():
