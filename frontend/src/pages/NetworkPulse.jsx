@@ -1,542 +1,443 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import {
-    Box, Grid, Typography, Button, Card, TextField,
-    Select, MenuItem, IconButton, Tooltip, Alert, Snackbar
+    Container, Grid, Card, Box, Typography, Button, TextField,
+    Select, MenuItem, FormControl, InputLabel, CircularProgress,
+    styled, IconButton, Tooltip
 } from '@mui/material';
-import { styled } from '@mui/material/styles';
+import {
+    PlayArrow, Stop, PictureAsPdf, TableChart, Code, Refresh, CloudUpload
+} from '@mui/icons-material';
 import { Pie, Line } from 'react-chartjs-2';
-import { PictureAsPdf, TableChart, Code, Refresh } from '@mui/icons-material';
+import { toast, Toaster } from 'sonner';
 import { Chart as ChartJS } from 'chart.js/auto';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
-import { CSVDownload } from 'react-csv';
-import { toast } from "sonner";
 
 const API_ENDPOINT = 'http://localhost:5002';
-const PageContainer = styled(Box)(({ theme }) => ({
-    padding: theme.spacing(3),
-    backgroundColor: theme.palette.background.default
-}));
 
+// Styled Components
 const StyledCard = styled(Card)(({ theme }) => ({
-    padding: theme.spacing(2),
-    height: '100%',
-    display: 'flex',
-    flexDirection: 'column'
-}));
-
-const ExportButton = styled(IconButton)(({ theme }) => ({
-    color: theme.palette.common.white,
-    backgroundColor: theme.palette.primary.main + '20',
-    marginLeft: theme.spacing(1),
-    '&:hover': {
-        backgroundColor: theme.palette.primary.main + '40'
-    }
-}));
-
-const ChartContainer = styled(Box)({
-    height: 300,
-    marginBottom: 20,
-    padding: '10px',
+    padding: theme.spacing(3),
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: '8px'
-});
+    backdropFilter: 'blur(10px)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    borderRadius: '12px',
+    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+}));
+
+const StyledButton = styled(Button)(({ theme }) => ({
+    margin: theme.spacing(1),
+    textTransform: 'none',
+    borderRadius: '8px',
+    backgroundColor: props =>
+        props.isCapturing ? theme.palette.error.main : theme.palette.success.main,
+    '&:hover': {
+        backgroundColor: props =>
+            props.isCapturing ? theme.palette.error.dark : theme.palette.success.dark,
+    },
+}));
+
+const StyledIconButton = styled(IconButton)(({ theme }) => ({
+    margin: theme.spacing(0.5),
+    color: theme.palette.text.secondary,
+    '&:hover': {
+        color: theme.palette.primary.light,
+    },
+}));
 
 const NetworkPulse = () => {
     const [captureStatus, setCaptureStatus] = useState('stopped');
     const [networkData, setNetworkData] = useState({
-        packets: [],
-        protocols: {},
-        timeSeriesData: [],
-        anomalies: []
+        totalPackets: 0,  // Added
+        protocols: {},      // Added
+        portDistribution: {},
+        maxPorts: []
     });
     const [filters, setFilters] = useState({
+        interface: 'en0',
         ipRange: '',
         portRange: '',
         protocol: 'all',
         timeRange: '1h'
     });
-    const [isFiltersValid, setIsFiltersValid] = useState(true);
-    const [showCSV, setShowCSV] = useState(false);
-    const [alert, setAlert] = useState({
-        open: false,
-        message: '',
-        severity: 'info'
-    });
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [selectedFile, setSelectedFile] = useState(null);
 
-    const protocolChartData = {
+    const pieChartData = {
         labels: Object.keys(networkData.protocols),
         datasets: [{
             data: Object.values(networkData.protocols),
             backgroundColor: [
-                '#FF6384', '#36A2EB', '#FFCE56', 
-                '#4BC0C0', '#9966FF', '#FF9F40'
+                '#4CAF50', '#2196F3', '#FFC107',
+                '#E91E63', '#9C27B0', '#FF5722'
             ]
         }]
     };
 
-    const timeSeriesData = {
-        labels: networkData.timeSeriesData.map(d => new Date(d.timestamp).toLocaleTimeString()),
+    const lineChartData = {
+        labels: Array.from({ length: 10 }, (_, i) => `Time ${i}`),
         datasets: [{
             label: 'Traffic Volume',
-            data: networkData.timeSeriesData.map(d => d.value),
-            borderColor: '#36A2EB',
-            fill: false,
+            data: Array.from({ length: 10 }, () => Math.floor(Math.random() * 100)),
+            borderColor: '#2196F3',
+            backgroundColor: 'rgba(33, 150, 243, 0.1)',
+            fill: true,
             tension: 0.4
         }]
     };
 
-    const showAlert = (message, severity = 'error') => {
-        setAlert({
-            open: true,
-            message,
-            severity
-        });
-    };
-
-    const handleCloseAlert = () => {
-        setAlert({ ...alert, open: false });
-    };
-
-    const validateFilters = () => {
-        const ipRegex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{2})?$/;
-        const portRegex = /^\d+(-\d+)?$/;
-    
-        if (filters.ipRange && !ipRegex.test(filters.ipRange)) {
-            showAlert("Invalid IP Range. Please use format: 192.168.1.0/24");
-            return false;
-        }
-    
-        if (filters.portRange && !portRegex.test(filters.portRange)) {
-            showAlert("Invalid Port Range. Please use format: 80-443");
-            return false;
-        }
-    
-        if (filters.protocol === '') {
-            showAlert("Protocol Required. Please select a protocol", "warning");
-            return false;
-        }
-    
-        return true;
-    };
-
-    const exportToPDF = async () => {
-        try {
-            toast.info("Generating PDF report...", { 
-                duration: 2000,
-                id: "pdf-export-loading" 
-            });
-            
-            const pdf = new jsPDF('landscape', 'mm', 'a4');
-            const pageWidth = pdf.internal.pageSize.getWidth();
-            const pageHeight = pdf.internal.pageSize.getHeight();
-    
-            pdf.setFontSize(24);
-            pdf.setTextColor(44, 62, 80);
-            pdf.text('Network Traffic Analysis Report', 15, 20);
-    
-            pdf.setFontSize(12);
-            pdf.setTextColor(52, 73, 94);
-            const currentDate = new Date().toLocaleString();
-            pdf.text(`Generated: ${currentDate}`, 15, 30);
-            pdf.text(`Time Range: ${filters.timeRange}`, 15, 35);
-            pdf.text(`Protocol Filter: ${filters.protocol}`, 15, 40);
-            pdf.text(`IP Range: ${filters.ipRange || 'All'}`, 15, 45);
-            pdf.text(`Port Range: ${filters.portRange || 'All'}`, 15, 50);
-            
-            pdf.setDrawColor(200, 200, 200);
-            pdf.line(15, 55, pageWidth - 15, 55);
-            
-            const protocolChart = document.getElementById('protocol-chart');
-            const timeSeriesChart = document.getElementById('timeseries-chart');
-            const statsSection = document.getElementById('stats-section');
-            
-            const protocolCanvas = await html2canvas(protocolChart, {
-                scale: 3,
-                backgroundColor: '#ffffff',
-                logging: false
-            });
-            
-            const chartWidth = pageWidth / 2 - 25;
-            const chartHeight = 80;
-            
-            pdf.text('Protocol Distribution', 15, 65);
-            pdf.addImage(
-                protocolCanvas.toDataURL('image/png'),
-                'PNG',
-                15,
-                70,
-                chartWidth,
-                chartHeight
-            );
-            
-            const timeSeriesCanvas = await html2canvas(timeSeriesChart, {
-                scale: 3,
-                backgroundColor: '#ffffff',
-                logging: false
-            });
-            
-            pdf.text('Traffic Over Time', pageWidth / 2 + 5, 65);
-            pdf.addImage(
-                timeSeriesCanvas.toDataURL('image/png'),
-                'PNG',
-                pageWidth / 2 + 5,
-                70,
-                chartWidth,
-                chartHeight
-            );
-    
-            pdf.setFontSize(18);
-            pdf.text('Network Statistics Summary', 15, 165);
-            
-            pdf.setDrawColor(100, 100, 100);
-            pdf.setFillColor(250, 250, 250);
-            pdf.roundedRect(15, 170, pageWidth - 30, 40, 3, 3, 'FD');
-            
-            const stats = [
-                `Total Packets: ${networkData.packets.length}`,
-                `Active Protocols: ${Object.keys(networkData.protocols).length}`,
-                `Anomalies Detected: ${networkData.anomalies.length}`
-            ];
-    
-            pdf.setFontSize(14);
-            stats.forEach((stat, index) => {
-                const colWidth = (pageWidth - 30) / stats.length;
-                pdf.text(stat, 25 + (colWidth * index), 190);
-            });
-            
-            pdf.setFontSize(10);
-            pdf.setTextColor(100, 100, 100);
-            pdf.text(`Network Protocol Analyzer - Report generated on ${currentDate}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
-    
-            pdf.save(`network_analysis_${Date.now()}.pdf`);
-            toast.success("PDF report exported successfully");
-        } catch (error) {
-            console.error("PDF export error:", error);
-            toast.error("Failed to export PDF: " + error.message);
-        }
-    };
-
-    const handleExport = async (format) => {
-        if (!validateFilters()) {
-            showAlert("Please correct filter errors before exporting");
-            return;
-        }
-        
-        if (networkData.packets.length === 0) {
-            showAlert("No data available to export. Start a capture first or refresh data.", "warning");
-            return;
-        }
-        
-        try {
-            if (format === 'pdf') {
-                await exportToPDF();
-            } else {
-                toast.loading(`Preparing ${format.toUpperCase()} export...`);
-                
-                const response = await axios.get(`${API_ENDPOINT}/export/${format}`, {
-                    params: filters,
-                    responseType: 'blob'
-                });
-
-                const blob = new Blob([response.data], {
-                    type: format === 'csv' ? 'text/csv' : 'text/html'
-                });
-
-                const url = window.URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = `network_analysis_${Date.now()}.${format}`;
-                link.click();
-                window.URL.revokeObjectURL(url);
-                
-                toast.dismiss();
-                toast.success(`${format.toUpperCase()} exported successfully`);
+    const chartOptions = {
+        pie: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right',
+                    labels: { color: '#fff' }
+                },
+                title: {
+                    display: true,
+                    text: 'Protocol Distribution',
+                    color: '#fff'
+                }
             }
-        } catch (error) {
-            console.error(`Export error (${format}):`, error);
-            toast.dismiss();
-            toast.error(`Failed to export ${format}: ${error.message || 'Unknown error'}`);
-        }
-    };
-
-    const handleCaptureToggle = async () => {
-        if (!validateFilters()) {
-            showAlert("Please correct filter errors before starting capture");
-            return;
-        }
-
-        try {
-            const newStatus = captureStatus === 'capturing' ? 'stopped' : 'capturing';
-            await axios.post(`${API_ENDPOINT}/${newStatus === 'capturing' ? 'start' : 'stop'}_capture`, filters);
-            setCaptureStatus(newStatus);
-            
-            if (newStatus === 'capturing') {
-                showAlert("Network capture started successfully", "success");
-                fetchData();
-            } else {
-                showAlert("Network capture stopped", "info");
+        },
+        line: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: true },
+                title: {
+                    display: true,
+                    text: 'Traffic Over Time',
+                    color: '#fff'
+                }
+            },
+            scales: {
+                x: {
+                    grid: { color: 'rgba(255,255,255,0.1)' },
+                    ticks: { color: '#fff' }
+                },
+                y: {
+                    grid: { color: 'rgba(255,255,255,0.1)' },
+                    ticks: { color: '#fff' }
+                }
             }
-        } catch (error) {
-            console.error("Capture toggle error:", error);
-            showAlert(`Failed to ${captureStatus === 'capturing' ? 'stop' : 'start'} capture: ${error.message || 'Unknown error'}`);
-        }
-    };
-
-    const handleApplyFilters = () => {
-        if (validateFilters()) {
-            showAlert("Filters applied successfully", "success");
-            setIsFiltersValid(true);
-            if (captureStatus === 'capturing') {
-                fetchData();
-            }
-        } else {
-            setIsFiltersValid(false);
         }
     };
 
     const fetchData = async () => {
         try {
-            toast.loading("Fetching network data...", { id: "fetch-data" });
-            const response = await axios.get(`${API_ENDPOINT}/network_data`, {
-                params: filters
-            });
-            setNetworkData(response.data);
-            toast.success("Network data updated", { id: "fetch-data" });
-        } catch (error) {
-            console.error("Data fetch error:", error);
-            toast.error("Failed to fetch network data: " + (error.message || 'Unknown error'), { id: "fetch-data" });
+            setLoading(true);
+            const response = await axios.get(`${API_ENDPOINT}/api/packets`, { params: filters });
+            const { protocols, portDistribution, maxPorts } = response.data;
+            setNetworkData({ protocols, portDistribution, maxPorts });
+            setError(null);
+            toast.success("Data updated successfully");
+        } catch (err) {
+            setError(err.message);
+            toast.error(`Error fetching data: ${err.message}`);
+        } finally {
+            setLoading(false);
         }
     };
 
-    useEffect(() => {
-        const debouncedValidation = setTimeout(() => {
-            if (filters.ipRange || filters.portRange) {
-                const isValid = validateFilters();
-                setIsFiltersValid(isValid);
+    const handleCaptureToggle = async () => {
+        const newStatus = captureStatus === 'capturing' ? 'stop' : 'start';
+        try {
+            const response = await axios.post(`${API_ENDPOINT}/${newStatus}_capture`, { ...filters });
+
+            setCaptureStatus(newStatus === 'start' ? 'capturing' : 'stopped');
+            toast.success(`Capture ${newStatus}ed successfully`);
+
+            if (newStatus === 'start') {
+                // Update network data with initial data from the backend
+                setNetworkData({
+                    totalPackets: response.data.total_packets,
+                    protocols: response.data.protocols,
+                });
             }
-        }, 500);
-    
-        return () => clearTimeout(debouncedValidation);
-    }, [filters.ipRange, filters.portRange]);
-    
+        } catch (err) {
+            toast.error(`Failed to ${newStatus} capture: ${err.message}`);
+        }
+    };
+
+    const handleApplyFilters = () => {
+        fetchData();
+        toast.info("Filters applied");
+    };
+
+    const handleExport = async (format) => {
+        try {
+            setLoading(true);
+            const response = await axios.get(
+                `${API_ENDPOINT}/export/${format}`,
+                {
+                    params: filters,
+                    responseType: format === 'pdf' ? 'blob' : 'json'
+                }
+            );
+
+            const blob = new Blob([response.data], {
+                type: format === 'pdf' ? 'application/pdf' :
+                    format === 'csv' ? 'text/csv' : 'text/html'
+            });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `network_capture_${Date.now()}.${format}`;
+            link.click();
+            window.URL.revokeObjectURL(url);
+
+            toast.success(`${format.toUpperCase()} exported successfully`);
+        } catch (err) {
+            toast.error(`Export failed: ${err.message}`);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleFileUpload = async () => {
+        if (!selectedFile) {
+            toast.error("Please select a file first");
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+
+        try {
+            setLoading(true);
+            const response = await axios.post(
+                `${API_ENDPOINT}/upload_pcap`,
+                formData,
+                {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                }
+            );
+
+            const { portDistribution, maxPorts, protocols } = response.data;
+
+            setNetworkData({ protocols, portDistribution, maxPorts });
+
+            toast.success("File processed successfully");
+        } catch (err) {
+            toast.error(`Upload failed: ${err.message}`);
+        } finally {
+            setLoading(false);
+            setSelectedFile(null);
+        }
+    };
 
     return (
-        <PageContainer>
-            <Snackbar 
-                open={alert.open} 
-                autoHideDuration={5000} 
-                onClose={handleCloseAlert}
-                anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-            >
-                <Alert 
-                    onClose={handleCloseAlert} 
-                    severity={alert.severity} 
-                    variant="filled"
-                    sx={{ width: '100%' }}
-                >
-                    {alert.message}
-                </Alert>
-            </Snackbar>
-            
-            <Grid container spacing={3}>
-                <Grid item xs={12}>
-                    <StyledCard>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                            <Typography variant="h5">Network Protocol Analyzer</Typography>
-                            <Box>
-                                <Tooltip title="Export as PDF">
-                                    <ExportButton onClick={() => handleExport('pdf')}>
-                                        <PictureAsPdf />
-                                    </ExportButton>
-                                </Tooltip>
-                                <Tooltip title="Export as CSV">
-                                    <ExportButton onClick={() => handleExport('csv')}>
-                                        <TableChart />
-                                    </ExportButton>
-                                </Tooltip>
-                                <Tooltip title="Export as HTML">
-                                    <ExportButton onClick={() => handleExport('html')}>
-                                        <Code />
-                                    </ExportButton>
-                                </Tooltip>
-                                <Tooltip title="Refresh Data">
-                                    <ExportButton onClick={fetchData}>
-                                        <Refresh />
-                                    </ExportButton>
-                                </Tooltip>
-                            </Box>
-                        </Box>
+        <Container maxWidth="xl" sx={{ py: 4 }}>
+            <Toaster position="top-center" richColors />
+            <StyledCard>
+                <Box sx={{ mb: 4 }}>
+                    <Typography variant="h4" gutterBottom>
+                        Network Protocol Analyzer
+                    </Typography>
+                    <Typography variant="subtitle1" color="text.secondary">
+                        Real-time network traffic analysis and visualization
+                    </Typography>
+                </Box>
 
-                        {!isFiltersValid && (
-                            <Alert severity="error" sx={{ mb: 2 }}>
-                                Please correct the filter errors before proceeding
-                            </Alert>
-                        )}
+                <Grid container spacing={3}>
+                    <Grid item xs={12} md={3}>
+                        <StyledCard>
+                            <Typography variant="h6" gutterBottom>
+                                Capture Controls
+                            </Typography>
 
-                        <Grid container spacing={2}>
-                            <Grid item xs={12} md={3}>
-                                <StyledCard>
-                                    <Typography variant="h6" gutterBottom>Filters</Typography>
-                                    <TextField
-                                        fullWidth
-                                        label="IP Range"
-                                        value={filters.ipRange}
-                                        onChange={(e) => setFilters({ ...filters, ipRange: e.target.value })}
-                                        placeholder="192.168.1.0/24"
-                                        sx={{ mb: 2 }}
-                                        error={filters.ipRange && !isFiltersValid}
-                                        helperText={filters.ipRange && !isFiltersValid ? "Invalid format (use: 192.168.1.0/24)" : ""}
-                                    />
-                                    <TextField
-                                        fullWidth
-                                        label="Port Range"
-                                        value={filters.portRange}
-                                        onChange={(e) => setFilters({ ...filters, portRange: e.target.value })}
-                                        placeholder="80-443"
-                                        sx={{ mb: 2 }}
-                                        error={filters.portRange && !isFiltersValid}
-                                        helperText={filters.portRange && !isFiltersValid ? "Invalid format (use: 80-443)" : ""}
-                                    />
-                                    <Select
-                                        fullWidth
-                                        value={filters.protocol}
-                                        onChange={(e) => setFilters({ ...filters, protocol: e.target.value })}
-                                        sx={{ mb: 2 }}
-                                    >
-                                        <MenuItem value="all">All Protocols</MenuItem>
-                                        <MenuItem value="tcp">TCP</MenuItem>
-                                        <MenuItem value="udp">UDP</MenuItem>
-                                        <MenuItem value="icmp">ICMP</MenuItem>
-                                        <MenuItem value="http">HTTP</MenuItem>
-                                        <MenuItem value="https">HTTPS</MenuItem>
-                                        <MenuItem value="dns">DNS</MenuItem>
-                                    </Select>
-                                    <Select
-                                        fullWidth
-                                        value={filters.timeRange}
-                                        onChange={(e) => setFilters({ ...filters, timeRange: e.target.value })}
-                                        sx={{ mb: 2 }}
-                                    >
-                                        <MenuItem value="1h">Last Hour</MenuItem>
-                                        <MenuItem value="6h">Last 6 Hours</MenuItem>
-                                        <MenuItem value="24h">Last 24 Hours</MenuItem>
-                                        <MenuItem value="7d">Last 7 Days</MenuItem>
-                                    </Select>
-                                    <Button
-                                        fullWidth
-                                        variant="contained"
-                                        color="primary"
-                                        onClick={handleApplyFilters}
-                                        sx={{ mb: 2 }}
-                                    >
-                                        Apply Filters
-                                    </Button>
     
-                                </StyledCard>
-                            </Grid>
 
-                            <Grid item xs={12} md={9}>
-                                <div id="visualization-section">
-                                    <Grid container spacing={2}>
+                            <FormControl fullWidth margin="normal">
+                                <InputLabel>Interface</InputLabel>
+                                <Select
+                                    value={filters.interface}
+                                    label="Interface"
+                                    onChange={(e) => setFilters({
+                                        ...filters,
+                                        interface: e.target.value
+                                    })}
+                                >
+                                    <MenuItem value="en0">en0</MenuItem>
+                                    <MenuItem value="en1">en1</MenuItem>
+                                    <MenuItem value="lo0">lo0</MenuItem>
+                                </Select>
+                            </FormControl>
+
+                            <FormControl fullWidth margin="normal">
+                                <TextField
+                                    label="IP Range"
+                                    value={filters.ipRange}
+                                    onChange={(e) => setFilters({
+                                        ...filters,
+                                        ipRange: e.target.value
+                                    })}
+                                    placeholder="e.g., 192.168.1.0/24"
+                                />
+                            </FormControl>
+
+                            <FormControl fullWidth margin="normal">
+                                <TextField
+                                    label="Port Range"
+                                    value={filters.portRange}
+                                    onChange={(e) => setFilters({
+                                        ...filters,
+                                        portRange: e.target.value
+                                    })}
+                                    placeholder="e.g., 80,443,8080"
+                                />
+                            </FormControl>
+
+                            <FormControl fullWidth margin="normal">
+                                <InputLabel>Protocol</InputLabel>
+                                <Select
+                                    value={filters.protocol}
+                                    label="Protocol"
+                                    onChange={(e) => setFilters({
+                                        ...filters,
+                                        protocol: e.target.value
+                                    })}
+                                >
+                                    <MenuItem value="all">All Protocols</MenuItem>
+                                    <MenuItem value="tcp">TCP</MenuItem>
+                                    <MenuItem value="udp">UDP</MenuItem>
+                                    <MenuItem value="http">HTTP</MenuItem>
+                                    <MenuItem value="https">HTTPS</MenuItem>
+                                    <MenuItem value="dns">DNS</MenuItem>
+                                </Select>
+                            </FormControl>
+
+                            <StyledButton
+                                variant="outlined"
+                                onClick={handleApplyFilters}
+                                fullWidth
+                            >
+                                Apply Filters
+                            </StyledButton>
+
+                            <StyledButton
+                                component="label"
+                                variant="outlined"
+                                startIcon={<CloudUpload />}
+                                fullWidth
+                            >
+                                Upload PCAP
+                                <input
+                                    type="file"
+                                    hidden
+                                    accept=".pcap"
+                                    onChange={(e) => setSelectedFile(e.target.files[0])}
+                                />
+                            </StyledButton>
+
+                            {selectedFile && (
+                                <StyledButton
+                                    onClick={handleFileUpload}
+                                    variant="contained"
+                                    fullWidth
+                                >
+                                    Process File
+                                </StyledButton>
+                            )}
+                        </StyledCard>
+                    </Grid>
+
+                    <Grid item xs={12} md={9}>
+                        <StyledCard>
+                            <Box sx={{ mb: 3, display: 'flex', justifyContent: 'flex-end' }}>
+                                <StyledIconButton onClick={() => handleExport('pdf')}>
+                                    <PictureAsPdf />
+                                </StyledIconButton>
+                                <StyledIconButton onClick={() => handleExport('csv')}>
+                                    <TableChart />
+                                </StyledIconButton>
+                                <StyledIconButton onClick={() => handleExport('html')}>
+                                    <Code />
+                                </StyledIconButton>
+                                <StyledIconButton onClick={fetchData}>
+                                    <Refresh />
+                                </StyledIconButton>
+                            </Box>
+
+                            {loading ? (
+                                <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+                                    <CircularProgress />
+                                </Box>
+                            ) : error ? (
+                                <Typography color="error" align="center">
+                                    {error}
+                                </Typography>
+                            ) : (
+                                <>
+                                    <Grid container spacing={3}>
                                         <Grid item xs={12} md={6}>
-                                            <ChartContainer>
+                                            <Box sx={{ height: 300, padding: 16, marginBottom: 16 }}>
+                                                {/* Protocol Distribution Pie Chart */}
+                                                <Pie
+                                                    data={pieChartData}
+                                                    options={chartOptions.pie}
+                                                />
+                                            </Box>
+                                            <Box mt={3}>
                                                 <Typography variant="h6" gutterBottom>
-                                                    Protocol Distribution
+                                                    Maximum Ports
                                                 </Typography>
-                                                <div id="protocol-chart">
-                                                    <Pie 
-                                                        data={protocolChartData} 
-                                                        options={{
-                                                            responsive: true,
-                                                            maintainAspectRatio: false,
-                                                            plugins: {
-                                                                legend: {
-                                                                    position: 'bottom'
-                                                                }
-                                                            }
-                                                        }} 
-                                                    />
-                                                </div>
-                                            </ChartContainer>
+                                                {networkData.maxPorts.length > 0 ? (
+                                                    <Typography>
+                                                        {networkData.maxPorts.join(', ')}
+                                                    </Typography>
+                                                ) : (
+                                                    <Typography>No maximum ports found.</Typography>
+                                                )}
+                                            </Box>
                                         </Grid>
+
                                         <Grid item xs={12} md={6}>
-                                            <ChartContainer>
+                                            <Box sx={{ height: 300, padding: 16, marginBottom: 16 }}>
+                                                {/* Traffic Over Time Line Chart */}
+                                                <Line
+                                                    data={lineChartData}
+                                                    options={chartOptions.line}
+                                                />
+                                            </Box>
+                                            <Box mt={3}>
                                                 <Typography variant="h6" gutterBottom>
-                                                    Traffic Over Time
+                                                    Port Distribution
                                                 </Typography>
-                                                <div id="timeseries-chart">
-                                                    <Line 
-                                                        data={timeSeriesData} 
-                                                        options={{
-                                                            responsive: true,
-                                                            maintainAspectRatio: false,
-                                                            scales: {
-                                                                y: {
-                                                                    beginAtZero: true
-                                                                }
-                                                            },
-                                                            plugins: {
-                                                                legend: {
-                                                                    position: 'bottom'
-                                                                }
-                                                            }
-                                                        }} 
-                                                    />
-                                                </div>
-                                            </ChartContainer>
-                                        </Grid>
-                                        <Grid item xs={12}>
-                                            <ChartContainer>
-                                                <Typography variant="h6" gutterBottom>
-                                                    Network Statistics
-                                                </Typography>
-                                                <div id="stats-section">
-                                                    <Grid container spacing={2}>
-                                                        <Grid item xs={4}>
-                                                            <StyledCard>
-                                                                <Typography variant="h4">
-                                                                    {networkData.packets.length}
-                                                                </Typography>
-                                                                <Typography>Total Packets</Typography>
-                                                            </StyledCard>
-                                                        </Grid>
-                                                        <Grid item xs={4}>
-                                                            <StyledCard>
-                                                                <Typography variant="h4">
-                                                                    {Object.keys(networkData.protocols).length}
-                                                                </Typography>
-                                                                <Typography>Active Protocols</Typography>
-                                                            </StyledCard>
-                                                        </Grid>
-                                                        <Grid item xs={4}>
-                                                            <StyledCard>
-                                                                <Typography variant="h4">
-                                                                    {networkData.anomalies.length}
-                                                                </Typography>
-                                                                <Typography>Anomalies Detected</Typography>
-                                                            </StyledCard>
-                                                        </Grid>
-                                                    </Grid>
-                                                </div>
-                                            </ChartContainer>
+                                                {Object.keys(networkData.portDistribution).length > 0 ? (
+                                                    <Box>
+                                                        {Object.entries(networkData.portDistribution).map(([port, count]) => (
+                                                            <Typography key={port}>
+                                                                Port {port}: {count} packets
+                                                            </Typography>
+                                                        ))}
+                                                    </Box>
+                                                ) : (
+                                                    <Typography>No port distribution data available.</Typography>
+                                                )}
+                                            </Box>
                                         </Grid>
                                     </Grid>
-                                </div>
-                            </Grid>
-                        </Grid>
-                    </StyledCard>
+                                </>
+                            )}
+                        </StyledCard>
+                    </Grid>
                 </Grid>
-            </Grid>
-            {showCSV && (
-                <CSVDownload
-                    data={networkData}
-                    filename={`network_analysis_${Date.now()}.csv`}
-                    target="_blank"
-                />
-            )}
-        </PageContainer>
+                {/* Display other statistics */}
+                <Box mt={2} p={2} border="1px solid #ccc" borderRadius="4px">
+                    <Typography variant="h6">
+                        Network Statistics
+                    </Typography>
+                    <Typography variant="body1">
+                        Total Packets: {networkData.totalPackets}
+                    </Typography>
+                    {/* Add other statistics here */}
+                </Box>
+            </StyledCard>
+        </Container>
     );
 };
 

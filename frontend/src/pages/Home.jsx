@@ -1,16 +1,13 @@
 import React, { useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Box, Typography, Paper, Container, Grid } from '@mui/material';
 import styled from '@emotion/styled';
-import { 
-    Analytics, 
-    Security, 
-    Speed, 
-    CloudUpload 
-} from '@mui/icons-material';
+import { Analytics, Security, Speed, CloudUpload } from '@mui/icons-material';
 import { Activity, GitGraph, Network, Zap } from "lucide-react";
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../pages/Navbar';
+import Lottie from 'lottie-react';
+import networkAnimation from '../assets/network-animation.json';
 
 const AnimatedBackground = styled.div`
     position: absolute;
@@ -19,7 +16,14 @@ const AnimatedBackground = styled.div`
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background: #000000;
+    background: linear-gradient(135deg, #000000 0%, #1a1a1a 100%);
+    &:after {
+        content: '';
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        background: radial-gradient(circle at center, transparent 0%, #000000 70%);
+    }
 `;
 
 const NetworkCanvas = styled.canvas`
@@ -49,11 +53,16 @@ const GlassCard = styled(motion(Paper))`
     border-radius: 16px;
     color: white;
     transition: all 0.3s ease;
+    cursor: pointer;
+    transform-style: preserve-3d;
+    perspective: 1000px;
 
     &:hover {
-        transform: translateY(-5px);
+        transform: translateY(-5px) rotateX(10deg) rotateY(10deg);
         background: rgba(255, 255, 255, 0.1);
-        box-shadow: 0 8px 32px rgba(33, 150, 243, 0.3);
+        box-shadow: 
+            0 8px 32px rgba(33, 150, 243, 0.3),
+            0 0 0 1px rgba(255, 255, 255, 0.1);
     }
 `;
 
@@ -66,9 +75,9 @@ const PulseButton = styled(motion.button)`
     font-size: 1.2rem;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.3s ease;
     position: relative;
     overflow: hidden;
+    box-shadow: 0 4px 15px rgba(33, 150, 243, 0.3);
 
     &:before {
         content: '';
@@ -86,6 +95,50 @@ const PulseButton = styled(motion.button)`
     &:hover:before {
         width: 300px;
         height: 300px;
+    }
+`;
+
+const FloatingIcon = styled(motion.div)`
+    position: absolute;
+    pointer-events: none;
+`;
+
+const PulsingCircle = styled(motion.div)`
+    position: absolute;
+    border-radius: 50%;
+    background: rgba(33, 150, 243, 0.2);
+`;
+
+const FloatingShape = styled(motion.div)`
+    position: absolute;
+    width: ${props => props.size}px;
+    height: ${props => props.size}px;
+    background: ${props => props.color};
+    clip-path: ${props => props.shape};
+    opacity: 0.15;
+    pointer-events: none;
+`;
+
+const GradientText = styled(Typography)`
+    background: linear-gradient(
+        45deg,
+        #2196f3 0%,
+        #21cbf3 25%,
+        #2196f3 50%,
+        #21cbf3 75%,
+        #2196f3 100%
+    );
+    background-size: 200% auto;
+    animation: gradient 3s linear infinite;
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 30px rgba(33, 150, 243, 0.3);
+    
+    @keyframes gradient {
+        to {
+            background-position: 200% center;
+        }
     }
 `;
 
@@ -129,6 +182,30 @@ const features = [
         icon: <CloudUpload sx={{ fontSize: 40, color: '#2196f3' }} />,
         title: "Cloud Reports",
         description: "Automated report generation with cloud storage integration."
+    }
+];
+
+const shapes = [
+    {
+        size: 100,
+        color: '#2196f3',
+        shape: 'polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%)',
+        initial: { x: -100, y: -100, rotate: 0 },
+        animate: { x: -80, y: -80, rotate: 360 },
+    },
+    {
+        size: 80,
+        color: '#21cbf3',
+        shape: 'polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)',
+        initial: { x: window.innerWidth - 100, y: -50, rotate: 0 },
+        animate: { x: window.innerWidth - 120, y: -30, rotate: -360 },
+    },
+    {
+        size: 120,
+        color: '#2196f3',
+        shape: 'polygon(20% 0%, 80% 0%, 100% 20%, 100% 80%, 80% 100%, 20% 100%, 0% 80%, 0% 20%)',
+        initial: { x: -50, y: window.innerHeight - 100, rotate: 0 },
+        animate: { x: -30, y: window.innerHeight - 120, rotate: 360 },
     }
 ];
 
@@ -225,10 +302,73 @@ const Home = () => {
     }, []);
 
     return (
-        <Box sx={{ background: '#000000', minHeight: '100vh' }}>
+        <Box sx={{ background: '#000000', minHeight: '100vh', overflow: 'hidden' }}>
             <Navbar />
             <HeroSection>
                 <NetworkCanvas ref={canvasRef} />
+                <AnimatedBackground />
+                
+                {/* Floating network icons */}
+                <AnimatePresence>
+                    {[...Array(5)].map((_, i) => (
+                        <FloatingIcon
+                            key={i}
+                            initial={{ x: Math.random() * window.innerWidth, y: -100 }}
+                            animate={{
+                                y: window.innerHeight + 100,
+                                rotate: Math.random() * 360,
+                                x: Math.random() * window.innerWidth
+                            }}
+                            exit={{ opacity: 0 }}
+                            transition={{
+                                duration: 10,
+                                repeat: Infinity,
+                                ease: "linear"
+                            }}
+                        >
+                            <Network size={20} color="#2196f3" opacity={0.3} />
+                        </FloatingIcon>
+                    ))}
+                </AnimatePresence>
+
+                {/* Pulsing circles */}
+                {[...Array(3)].map((_, i) => (
+                    <PulsingCircle
+                        key={i}
+                        initial={{ scale: 0, opacity: 0.5 }}
+                        animate={{ scale: 2, opacity: 0 }}
+                        transition={{
+                            duration: 2,
+                            repeat: Infinity,
+                            delay: i * 0.6
+                        }}
+                        style={{
+                            width: 100,
+                            height: 100,
+                            left: '50%',
+                            top: '50%',
+                            transform: 'translate(-50%, -50%)'
+                        }}
+                    />
+                ))}
+                
+                {shapes.map((shape, index) => (
+                    <FloatingShape
+                        key={index}
+                        size={shape.size}
+                        color={shape.color}
+                        shape={shape.shape}
+                        initial={shape.initial}
+                        animate={shape.animate}
+                        transition={{
+                            duration: 20,
+                            repeat: Infinity,
+                            repeatType: "reverse",
+                            ease: "linear"
+                        }}
+                    />
+                ))}
+
                 <Container maxWidth="lg" sx={{ position: 'relative', zIndex: 2 }}>
                     <Grid container spacing={6}>
                         <Grid item xs={12} md={6}>
@@ -237,20 +377,9 @@ const Home = () => {
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ duration: 0.8 }}
                             >
-                                <Typography
-                                    variant="h2"
-                                    sx={{
-                                        mb: 3,
-                                        fontWeight: 800,
-                                        background: 'linear-gradient(45deg, #2196f3, #21cbf3)',
-                                        backgroundClip: 'text',
-                                        WebkitBackgroundClip: 'text',
-                                        color: 'transparent',
-                                        textShadow: '0 0 20px rgba(33, 150, 243, 0.3)'
-                                    }}
-                                >
+                                <GradientText variant="h2" sx={{ mb: 3, fontWeight: 800 }}>
                                     Wireshark Analytics Platform
-                                </Typography>
+                                </GradientText>
                                 <Typography 
                                     variant="h5" 
                                     sx={{ 
@@ -277,17 +406,36 @@ const Home = () => {
                                 </PulseButton>
                             </motion.div>
                         </Grid>
+                        <Grid item xs={12} md={6}>
+                            <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
+                                <Lottie 
+                                    animationData={networkAnimation}
+                                    loop={true}
+                                    style={{ opacity: 0.8 }}
+                                />
+                            </Box>
+                        </Grid>
                     </Grid>
 
                     <Grid container spacing={4} sx={{ mt: 8 }}>
                         {features.map((feature, index) => (
                             <Grid item xs={12} sm={6} md={3} key={index}>
                                 <motion.div
-                                    initial={{ opacity: 0, y: 20 }}
+                                    initial={{ opacity: 0, y: 50 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     transition={{ duration: 0.5, delay: index * 0.1 }}
+                                    whileHover={{
+                                        scale: 1.05,
+                                        rotateX: 10,
+                                        rotateY: 10,
+                                        transition: { duration: 0.3 }
+                                    }}
+                                    style={{
+                                        perspective: '1000px',
+                                        transformStyle: 'preserve-3d'
+                                    }}
                                 >
-                                    <GlassCard elevation={0}>
+                                    <GlassCard>
                                         <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
                                             {feature.icon}
                                         </Box>
@@ -324,3 +472,4 @@ const Home = () => {
 };
 
 export default Home;
+
