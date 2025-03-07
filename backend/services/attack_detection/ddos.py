@@ -1,32 +1,68 @@
 from collections import defaultdict
 from datetime import datetime
 import logging
+from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
 class DDoSDetector:
-    def __init__(self, threshold=200):
+    def __init__(self, threshold=200, time_window=60):
         self.threshold = threshold
-        self.ip_request_counts = defaultdict(int)
-
+        self.time_window = time_window  
+        self.ip_request_counts: Dict[str, List] = defaultdict(list)
+        
     def detect_ddos(self, packets):
         alerts = []
-        self.ip_request_counts.clear()
+        current_time = datetime.now()
+        
         for packet in packets:
             try:
-                source_ip = packet.get('source_ip', None)
-                if source_ip:
-                    self.ip_request_counts[source_ip] += 1
+                source_ip = packet.get('source_ip')
+                if not source_ip:
+                    continue
+                    
+             
+                self.ip_request_counts[source_ip].append(current_time)
+                
+                
+                self.ip_request_counts[source_ip] = [
+                    ts for ts in self.ip_request_counts[source_ip]
+                    if (current_time - ts).total_seconds() <= self.time_window
+                ]
+                
+              
+                packet_size = packet.get('length', 0)
+                protocol = packet.get('protocol', '').lower()
+                flags = packet.get('flags', '').lower()
+                
+               
+                if (packet_size < 100 and len(self.ip_request_counts[source_ip]) > self.threshold):
+                    alerts.append({
+                        "timestamp": current_time.isoformat(),
+                        "source": source_ip,
+                        "alert": "Potential hping3 DDoS Attack",
+                        "details": f"High-frequency small packets detected from {source_ip}"
+                    })
+                
+              
+                if protocol in ['tcp', 'udp'] and len(self.ip_request_counts[source_ip]) > 50:
+                    alerts.append({
+                        "timestamp": current_time.isoformat(),
+                        "source": source_ip,
+                        "alert": "Potential nmap Scan",
+                        "details": f"Multiple {protocol.upper()} packets detected from {source_ip}"
+                    })
+                
+              
+                if flags and 'syn' in flags and len(self.ip_request_counts[source_ip]) > 100:
+                    alerts.append({
+                        "timestamp": current_time.isoformat(),
+                        "source": source_ip,
+                        "alert": "SYN Flood Attack",
+                        "details": f"High-frequency SYN packets from {source_ip}"
+                    })
+                    
             except Exception as e:
                 logger.error(f"Error processing packet for DDoS detection: {e}")
-
-        for ip, count in self.ip_request_counts.items():
-            if count > self.threshold:
-                analysis = f"DDoS attack detected. High traffic from IP: {ip}"
-                alerts.append({
-                    "timestamp": datetime.now().isoformat(),
-                    "source": ip,
-                    "alert": "DDoS Attack Detected",
-                    "details": analysis
-                })
+                
         return alerts

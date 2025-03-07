@@ -15,7 +15,7 @@ class TCPFloodDetector:
         for packet in packets:
             try:
                 if packet['packet_type'] == 'TCP':
-                    tcp_flags = packet.get('flags', '')  # Assuming 'flags' is a string
+                    tcp_flags = packet.get('flags', '')  
                     if 'S' in tcp_flags:
                         source_ip = packet.get('source_ip', None)
                         if source_ip:

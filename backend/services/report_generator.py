@@ -1,5 +1,5 @@
 import matplotlib
-matplotlib.use('Agg')  # Use the 'Agg' backend, which doesn't require a GUI
+matplotlib.use('Agg')  
 import matplotlib.pyplot as plt
 from datetime import datetime
 import json
@@ -9,7 +9,6 @@ from collections import defaultdict, Counter
 import pandas as pd
 import logging
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
