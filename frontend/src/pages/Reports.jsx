@@ -44,6 +44,7 @@ import axios from 'axios';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import { toPng } from 'html-to-image';
+import { toast } from 'sonner';
 
 
 ChartJS.register(
@@ -106,7 +107,6 @@ const MetricBox = styled(motion.div)`
     border: 1px solid rgba(255, 255, 255, 0.1);
     color: white;
 `;
-
 
 const GradientButton = styled(Button)`
     background: linear-gradient(45deg, #2196f3, #21cbf3);
@@ -269,16 +269,35 @@ const Reports = () => {
             });
 
             setReports(data);
-            setThreatStats(threatsResponse.data.threats);
+            
+            // Update threatStats based on severity
+            const updatedThreatStats = {
+                mitm: { count: 0, severity: 'medium', lastDetected: null },
+                bruteForce: { count: 0, severity: 'high', lastDetected: null },
+                ddos: { count: 0, severity: 'critical', lastDetected: null },
+                dos: { count: 0, severity: 'high', lastDetected: null },
+                sqlInjection: { count: 0, severity: 'critical', lastDetected: null }
+            };
+
+            if (threatsResponse.data && threatsResponse.data.threats) {
+                Object.keys(threatsResponse.data.threats).forEach(threatType => {
+                    updatedThreatStats[threatType] = threatsResponse.data.threats[threatType];
+                });
+            }
+            
+            setThreatStats(updatedThreatStats);
             setActiveMitigations(threatsResponse.data.mitigations);
             calculateNetworkStats(data);
             detectAnomalies(data);
+
         } catch (error) {
             console.error('Error fetching data:', error);
+            toast.error(`Error fetching data: ${error.message}`); 
         } finally {
             setIsRefreshing(false);
         }
     };
+    
     const calculateNetworkStats = (reportData) => {
         const stats = reportData.reduce((acc, report) => ({
             totalData: acc.totalData + (report.total_bytes || 0),
@@ -399,6 +418,7 @@ const Reports = () => {
 
         doc.save("network_report.pdf");
     };
+
     const handleExport = async (format) => {
         setIsRefreshing(true);
         try {
@@ -419,6 +439,7 @@ const Reports = () => {
             window.URL.revokeObjectURL(url);
         } catch (error) {
             console.error(`Export error (${format}):`, error);
+            toast.error(`Export error (${format}): ${error.message}`);
         } finally {
             setIsRefreshing(false);
         }
@@ -444,7 +465,6 @@ const Reports = () => {
         captureChart();
     }, [trafficData]);
 
-    //render component
     return (
         <PageContainer>
             <Box sx={{ p: 4 }}>
@@ -459,12 +479,63 @@ const Reports = () => {
                                 <FileDownload/>
                             </IconButton>
                         </Tooltip>
+                        <Tooltip title="Export to HTML">
+                            <IconButton onClick={() => handleExport('html')} sx={{ color: 'white' }}>
+                            </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Export to CSV">
+                            <IconButton onClick={() => handleExport('csv')} sx={{ color: 'white' }}>
+                                <Download/>
+                            </IconButton>
+                        </Tooltip>
                     </Box>
                 </Box>
 
+       
                 <Grid container spacing={3}>
-                    {/* Configuration Options */}
-                    <Grid item xs={12} md={12} lg={12}>
+                    
+                    <Grid item xs={12} md={6} lg={3}>
+                        <StyledCard isSmallScreen={isSmallScreen}>
+                            <Typography variant="h6" mb={2}>Network Metrics</Typography>
+                            {metrics.map(metric => (
+                                <MetricBox key={metric.label} isSmallScreen={isSmallScreen}>
+                                    {metric.icon}
+                                    <Typography variant="h5" color={metric.color}>{metric.value}</Typography>
+                                    <Typography variant="body2">{metric.label}</Typography>
+                                </MetricBox>
+                            ))}
+                        </StyledCard>
+                    </Grid>
+
+                   
+                    <Grid item xs={12} md={6} lg={3}>
+                        <StyledCard isSmallScreen={isSmallScreen}>
+                            <Typography variant="h6" mb={2}>Threat Stats</Typography>
+                            <ThreatMetric type="DDoS" data={threatStats.ddos} />
+                            <ThreatMetric type="Brute Force" data={threatStats.bruteForce} />
+                            <ThreatMetric type="SQL Injection" data={threatStats.sqlInjection} />
+                        </StyledCard>
+                    </Grid>
+
+                 
+                    <Grid item xs={12} md={6} lg={3}>
+                        <StyledCard isSmallScreen={isSmallScreen}>
+                            <Typography variant="h6" mb={2}>Active Mitigations</Typography>
+                            {activeMitigations.length > 0 ? (
+                                activeMitigations.map((mitigation, index) => (
+                                    <AnomalyItem key={index}>
+                                        <Security sx={{ mr: 1 }}/>
+                                        {mitigation.description}
+                                    </AnomalyItem>
+                                ))
+                            ) : (
+                                <Typography variant="body2">No active mitigations.</Typography>
+                            )}
+                        </StyledCard>
+                    </Grid>
+
+                
+                    <Grid item xs={12} md={6} lg={3}>
                         <StyledCard isSmallScreen={isSmallScreen}>
                             <Typography variant="h6" mb={2}>Configuration Options</Typography>
                             <Box display="flex" flexDirection={isSmallScreen ? 'column' : 'row'} gap={2} alignItems="center">
@@ -473,24 +544,19 @@ const Reports = () => {
                                     type="number"
                                     value={anomalyThreshold}
                                     onChange={(e) => setAnomalyThreshold(parseInt(e.target.value))}
-                                    size="small"
-                                    sx={{backgroundColor: 'rgba(255, 255, 255, 0.05)'}}
-                                    InputProps={{
-                                        style: { color: 'white' }
-                                    }}
-                                    InputLabelProps={{
-                                        style: { color: 'white' }
-                                    }}
+                                    sx={{ width: '100%', mb: 2 }}
+                                    InputLabelProps={{ style: { color: 'white' } }}
+                                    InputProps={{ style: { color: 'white' } }}
                                 />
-                                <FormControl variant="outlined" size="small" sx={{ minWidth: 150, backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
+                                <FormControl fullWidth sx={{ mb: 2 }}>
                                     <InputLabel id="time-range-label" style={{ color: 'white' }}>Time Range</InputLabel>
                                     <Select
                                         labelId="time-range-label"
                                         id="time-range-select"
                                         value={timeRange}
-                                        onChange={(e) => setTimeRange(e.target.value)}
                                         label="Time Range"
-                                        style={{ color: 'white' }}
+                                        onChange={(e) => setTimeRange(e.target.value)}
+                                        sx={{ color: 'white', '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255, 255, 255, 0.23)' } }}
                                     >
                                         <MenuItem value="all">All Time</MenuItem>
                                         <MenuItem value="lastHour">Last Hour</MenuItem>
@@ -498,16 +564,18 @@ const Reports = () => {
                                         <MenuItem value="last7Days">Last 7 Days</MenuItem>
                                     </Select>
                                 </FormControl>
+                            </Box>
 
-                                <FormControl variant="outlined" size="small" sx={{ minWidth: 150, backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
+                            <Box display="flex" flexDirection={isSmallScreen ? 'column' : 'row'} gap={2} alignItems="center">
+                                <FormControl fullWidth sx={{ mb: 2 }}>
                                     <InputLabel id="sort-by-label" style={{ color: 'white' }}>Sort By</InputLabel>
                                     <Select
                                         labelId="sort-by-label"
                                         id="sort-by-select"
                                         value={sortBy}
-                                        onChange={(e) => setSortBy(e.target.value)}
                                         label="Sort By"
-                                        style={{ color: 'white' }}
+                                        onChange={(e) => setSortBy(e.target.value)}
+                                        sx={{ color: 'white', '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255, 255, 255, 0.23)' } }}
                                     >
                                         <MenuItem value="timestamp">Timestamp</MenuItem>
                                         <MenuItem value="total_packets">Total Packets</MenuItem>
@@ -515,15 +583,15 @@ const Reports = () => {
                                     </Select>
                                 </FormControl>
 
-                                <FormControl variant="outlined" size="small" sx={{ minWidth: 120, backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
+                                <FormControl fullWidth sx={{ mb: 2 }}>
                                     <InputLabel id="sort-order-label" style={{ color: 'white' }}>Sort Order</InputLabel>
                                     <Select
                                         labelId="sort-order-label"
                                         id="sort-order-select"
                                         value={sortOrder}
-                                        onChange={(e) => setSortOrder(e.target.value)}
                                         label="Sort Order"
-                                        style={{ color: 'white' }}
+                                        onChange={(e) => setSortOrder(e.target.value)}
+                                        sx={{ color: 'white', '.MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255, 255, 255, 0.23)' } }}
                                     >
                                         <MenuItem value="asc">Ascending</MenuItem>
                                         <MenuItem value="desc">Descending</MenuItem>
@@ -532,130 +600,32 @@ const Reports = () => {
                             </Box>
                         </StyledCard>
                     </Grid>
- 
-                    {/*metrics */}
-                    {metrics.map((metric, index) => (
-                        <Grid item xs={12} sm={6} md={3} key={index}>
-                            <MetricBox isSmallScreen={isSmallScreen} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                                {metric.icon}
-                                <Typography variant="h6">{metric.value}</Typography>
-                                <Typography variant="body2" color="textSecondary">{metric.label}</Typography>
-                            </MetricBox>
-                        </Grid>
-                    ))}
 
-                    {/*network traffic analysis for attacks */}
-                    <Grid item xs={12} md={8}>
-                        <StyledCard isSmallScreen={isSmallScreen}>
-                            <Typography variant="h6" mb={2}>Network Traffic Analysis</Typography>
-                            <div className="traffic-chart-container" style={{ height: isSmallScreen ? '300px' : '400px' }}>
-                                <Line data={trafficData} options={chartOptions}/>
-                            </div>
+                   
+                    <Grid item xs={12}>
+                        <StyledCard isSmallScreen={isSmallScreen} className="traffic-chart-container">
+                            <Typography variant="h6" gutterBottom>
+                                Network Traffic
+                            </Typography>
+                            <Line data={trafficData} options={chartOptions}/>
                         </StyledCard>
                     </Grid>
 
-                    {/*threat Distribution */}
-                    <Grid item xs={12} md={4}>
-                        <StyledCard isSmallScreen={isSmallScreen}>
-                            <Typography variant="h6" mb={2}>Threat Distribution</Typography>
-                            <div style={{ height: isSmallScreen ? '300px' : '400px' }}>
-                                <Radar data={threatRadarChart} options={radarOptions}/>
-                            </div>
-                        </StyledCard>
-                    </Grid>
-
-                    {/*threat analysis dashboard */}
-                    <Grid item xs={12}>
-                        <Typography variant="h5" sx={{ mb: 3 }}>Threat Analysis Dashboard</Typography>
-                        <Grid container spacing={3}>
-                            {/*mitm attacks */}
-                            <Grid item xs={12} md={4}>
-                                <ThreatCard severity={threatStats.mitm.severity}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                        <Security sx={{ mr: 1 }} />
-                                        <Typography variant="h6">MITM Detection</Typography>
-                                    </Box>
-                                    <ThreatMetric type="MITM" data={threatStats.mitm} />
-                                    <Typography variant="body2">
-                                        Monitoring for ARP spoofing and SSL stripping attempts
-                                    </Typography>
-                                </ThreatCard>
-                            </Grid>
-                            {/* DDoS/DoS Attacks */}
-                            <Grid item xs={12} md={4}>
-                                <ThreatCard severity={threatStats.ddos.severity}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                        <Warning sx={{ mr: 1 }} />
-                                        <Typography variant="h6">DDoS/DoS Analysis</Typography>
-                                    </Box>
-                                    <ThreatMetric type="DDoS" data={threatStats.ddos} />
-                                    <ThreatMetric type="DoS" data={threatStats.dos} />
-                                </ThreatCard>
-                            </Grid>
-
-                            {/*brute force & SQL injection */}
-                            <Grid item xs={12} md={4}>
-                                <ThreatCard severity={threatStats.bruteForce.severity}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                        <Security sx={{ mr: 1 }} />
-                                        <Typography variant="h6">Authentication Attacks</Typography>
-                                    </Box>
-                                    <ThreatMetric type="Brute Force" data={threatStats.bruteForce} />
-                                    <ThreatMetric type="SQL Injection" data={threatStats.sqlInjection} />
-                                </ThreatCard>
-                            </Grid>
-                        </Grid>
-                    </Grid>
-
-                    {/*anomaly/threat alerts */}
+              
                     <Grid item xs={12}>
                         <StyledCard isSmallScreen={isSmallScreen}>
-                            <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                                <Typography variant="h6">Anomaly/Threat Alerts</Typography>
-                                <Typography variant="body2" color="textSecondary">
-                                    Threshold: {anomalyThreshold} packets
-                                </Typography>
-                            </Box>
+                            <Typography variant="h6" gutterBottom>
+                                Potential Anomalies
+                            </Typography>
                             {anomalies.length > 0 ? (
                                 anomalies.map((anomaly, index) => (
                                     <AnomalyItem key={index}>
-                                        <Warning sx={{ marginRight: 1 }}/>
-                                        Potential Threat: High traffic detected on {new Date(anomaly.timestamp).toLocaleString()} 
-                                        (Packets: {anomaly.total_packets}, Latency: {anomaly.average_latency}ms)
+                                        <Warning sx={{ mr: 1 }}/>
+                                        {`High traffic detected on ${new Date(anomaly.timestamp).toLocaleString()} (Packets: ${anomaly.total_packets}, Latency: ${anomaly.average_latency}ms)`}
                                     </AnomalyItem>
                                 ))
                             ) : (
-                                <Typography variant="body2">No anomalies detected.</Typography>
-                            )}
-                        </StyledCard>
-                    </Grid>
-                    {/* Traffic Data Table */}
-                    <Grid item xs={12}>
-                        <StyledCard isSmallScreen={isSmallScreen}>
-                            <Typography variant="h6" mb={2}>Traffic Data</Typography>
-                            {reports.length > 0 ? (
-                                <div style={{ overflowX: 'auto' }}>
-                                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                        <thead>
-                                            <tr>
-                                                <th style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)', textAlign: 'left' }}>Timestamp</th>
-                                                <th style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)', textAlign: 'left' }}>Total Packets</th>
-                                                <th style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)', textAlign: 'left' }}>Average Latency</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {reports.map((report, index) => (
-                                                <tr key={index}>
-                                                    <td style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>{new Date(report.timestamp).toLocaleString()}</td>
-                                                    <td style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>{report.total_packets}</td>
-                                                    <td style={{ padding: '8px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>{report.average_latency}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            ) : (
-                                <Typography variant="body2">No data available.</Typography>
+                                <Typography variant="body2">No immediate threats detected.</Typography>
                             )}
                         </StyledCard>
                     </Grid>
