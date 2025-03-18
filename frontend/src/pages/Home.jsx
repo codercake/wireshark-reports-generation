@@ -395,7 +395,7 @@ const Home = () => {
                                     whileTap={{ scale: 0.95 }}
                                     onClick={() => navigate('/network-pulse')}
                                 >
-                                    Launch Analyzer
+                                    Begin now (:
                                     <motion.span
                                         animate={{ x: [0, 5, 0] }}
                                         transition={{ repeat: Infinity, duration: 1.5 }}
