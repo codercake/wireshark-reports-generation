@@ -23,6 +23,10 @@ import netifaces
 import platform
 import base64
 from bson.objectid import ObjectId
+import pyshark
+import traceback
+ALLOWED_EXTENSIONS = {'pcap', 'cap', 'pcapng'}
+
 
 load_dotenv()
 
@@ -63,6 +67,8 @@ app = Flask(__name__)
 app.config["MONGO_URI"] = os.getenv("MONGO_URI", "mongodb://localhost:27017/myDatabase")
 mongo = PyMongo(app)
 CORS(app)
+app.config['UPLOAD_FOLDER'] = os.path.join(os.getcwd(), 'uploads')
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 def get_default_interface():
     try:
@@ -506,6 +512,387 @@ def export_data(format):
     except Exception as e:
         logger.error(f"Error exporting data: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# Utility function to check file extension
+@app.route('/upload_pcap', methods=['POST'])
+def upload_pcap():
+    """
+    Handles PCAP file upload, performs analysis, and generates a report.
+    """
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+
+    file = request.files['file']
+
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+
+        try:
+            # Perform PCAP analysis
+            logger.info(f"Analyzing PCAP file: {filepath}")
+            packets = analyze_pcap(filepath)
+            
+            if not packets:
+                logger.error("No packets were extracted from the PCAP file")
+                return jsonify({'error': 'No packets could be extracted from the PCAP file'}), 400
+
+            logger.info(f"Successfully extracted {len(packets)} packets from PCAP file")
+            
+            # Generate report data
+            report_data = generate_report_data(packets)
+
+            # Generate PDF report
+            pdf_buffer = generate_pdf_report(report_data)
+
+            # Return the PDF as a response
+            return send_file(
+                pdf_buffer,
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name='network_analysis_report.pdf'
+            )
+
+        except Exception as e:
+            logger.exception(f"Error processing PCAP file: {str(e)}")
+            return jsonify({'error': str(e)}), 500
+        finally:
+            # Clean up the uploaded file
+            try:
+                os.remove(filepath)
+            except OSError as e:
+                logger.warning(f"Error deleting file {filepath}: {e}")
+
+    else:
+        return jsonify({'error': 'Invalid file type. Allowed types: pcap, cap'}), 400
+
+def analyze_pcap(filepath):
+    """
+    Analyzes the PCAP file using pyshark.
+
+    Args:
+        filepath (str): Path to the PCAP file.
+
+    Returns:
+        list: A list of dictionaries, where each dictionary represents a packet
+              and contains relevant information.
+    """
+    try:
+        logger.info(f"Opening PCAP file: {filepath}")
+        # Ensure the file exists
+        if not os.path.exists(filepath):
+            logger.error(f"PCAP file not found: {filepath}")
+            raise FileNotFoundError(f"PCAP file not found: {filepath}")
+            
+        # Use keep_packets=False to avoid memory issues with large files
+        capture = pyshark.FileCapture(filepath, keep_packets=False)
+        packets_data = []
+        
+        # Set a counter to log progress
+        packet_count = 0
+        
+        for packet in capture:
+            try:
+                packet_count += 1
+                if packet_count % 100 == 0:
+                    logger.info(f"Processed {packet_count} packets")
+                
+                # Extract timestamp
+                timestamp = str(packet.sniff_time) if hasattr(packet, 'sniff_time') else datetime.now().isoformat()
+                
+                # Extract basic packet info
+                packet_info = {
+                    'timestamp': timestamp,
+                    'length': int(packet.length) if hasattr(packet, 'length') else 0,
+                    'protocol': packet.highest_layer if hasattr(packet, 'highest_layer') else 'Unknown',
+                    'info': str(packet) if hasattr(packet, '__str__') else 'No summary available',
+                    'source_ip': 'N/A',
+                    'destination_ip': 'N/A',
+                    'source_port': 'N/A',
+                    'destination_port': 'N/A'
+                }
+                
+                # Extract IP information if available
+                if hasattr(packet, 'ip'):
+                    packet_info['source_ip'] = packet.ip.src
+                    packet_info['destination_ip'] = packet.ip.dst
+                
+                # Extract port information if available
+                if hasattr(packet, 'tcp'):
+                    packet_info['source_port'] = packet.tcp.srcport
+                    packet_info['destination_port'] = packet.tcp.dstport
+                elif hasattr(packet, 'udp'):
+                    packet_info['source_port'] = packet.udp.srcport
+                    packet_info['destination_port'] = packet.udp.dstport
+                
+                packets_data.append(packet_info)
+                
+            except AttributeError as e:
+                logger.warning(f"Skipping packet due to AttributeError: {e}")
+                continue
+            except Exception as e:
+                logger.error(f"An unexpected error occurred while processing a packet: {e}")
+                continue
+
+        logger.info(f"Completed processing PCAP file. Total packets processed: {packet_count}")
+        capture.close()
+        
+        if not packets_data:
+            logger.warning("No packets were successfully processed from the PCAP file")
+            
+        return packets_data
+
+    except FileNotFoundError as e:
+        logger.error(f"PCAP file not found: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Error during PCAP analysis: {e}")
+        logger.error(traceback.format_exc())
+        raise
+
+def generate_pdf_report(report_data):
+    """
+    Generates a PDF report from the analyzed packet data.
+    
+    Args:
+        report_data (dict): Dictionary containing report data.
+        
+    Returns:
+        io.BytesIO: A buffer containing the PDF data.
+    """
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    # Custom styles
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Title'],
+        fontSize=24,
+        spaceAfter=30,
+        alignment=1,  # Center align
+        textColor=colors.darkblue
+    )
+    
+    h1_style = ParagraphStyle(
+        'h1',
+        parent=styles['Heading1'],
+        fontSize=16,
+        spaceAfter=12,
+        textColor=colors.darkblue
+    )
+    
+    h2_style = ParagraphStyle(
+        'h2',
+        parent=styles['Heading2'],
+        fontSize=14,
+        spaceAfter=6,
+        textColor=colors.blue
+    )
+    
+    # Title
+    elements.append(Paragraph("Network Traffic Analysis Report", title_style))
+    elements.append(Spacer(1, 20))
+    
+    # Summary section
+    elements.append(Paragraph("Summary", h1_style))
+    elements.append(Paragraph(f"Total Packets Analyzed: {report_data['total_packets']}", styles['Normal']))
+    elements.append(Spacer(1, 10))
+    
+    # Protocol Distribution
+    elements.append(Paragraph("Protocol Distribution", h2_style))
+    protocol_data = []
+    protocol_data.append(["Protocol", "Count"])
+    for protocol, count in report_data['protocol_counts'].items():
+        protocol_data.append([protocol, str(count)])
+    
+    protocol_table = Table(protocol_data, colWidths=[300, 100])
+    protocol_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    elements.append(protocol_table)
+    elements.append(Spacer(1, 20))
+    
+    # Top Source IPs
+    elements.append(Paragraph("Top Source IP Addresses", h2_style))
+    source_ip_data = []
+    source_ip_data.append(["IP Address", "Packet Count"])
+    for ip, count in report_data['top_source_ips'].items():
+        source_ip_data.append([ip, str(count)])
+    
+    source_ip_table = Table(source_ip_data, colWidths=[300, 100])
+    source_ip_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    elements.append(source_ip_table)
+    elements.append(Spacer(1, 20))
+    
+    # Top Destination IPs
+    elements.append(Paragraph("Top Destination IP Addresses", h2_style))
+    dest_ip_data = []
+    dest_ip_data.append(["IP Address", "Packet Count"])
+    for ip, count in report_data['top_dest_ips'].items():
+        dest_ip_data.append([ip, str(count)])
+    
+    dest_ip_table = Table(dest_ip_data, colWidths=[300, 100])
+    dest_ip_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    elements.append(dest_ip_table)
+    elements.append(PageBreak())
+    
+    # Visualizations
+    elements.append(Paragraph("Visualizations", h1_style))
+    
+    # Add protocol distribution chart if available
+    if report_data['pie_chart_id']:
+        try:
+            pie_chart_data = mongo.db.images.find_one({'_id': ObjectId(report_data['pie_chart_id'])})
+            if pie_chart_data and 'image' in pie_chart_data:
+                img_data = pie_chart_data['image']
+                img_stream = io.BytesIO(img_data)
+                img = Image(img_stream, width=400, height=300)
+                elements.append(Paragraph("Protocol Distribution Chart", h2_style))
+                elements.append(img)
+                elements.append(Spacer(1, 20))
+        except Exception as e:
+            logger.error(f"Error adding pie chart to PDF: {e}")
+    
+    # Add bar chart if available
+    if report_data['bar_chart_id']:
+        try:
+            bar_chart_data = mongo.db.images.find_one({'_id': ObjectId(report_data['bar_chart_id'])})
+            if bar_chart_data and 'image' in bar_chart_data:
+                img_data = bar_chart_data['image']
+                img_stream = io.BytesIO(img_data)
+                img = Image(img_stream, width=400, height=300)
+                elements.append(Paragraph("Top Ports Chart", h2_style))
+                elements.append(img)
+                elements.append(Spacer(1, 20))
+        except Exception as e:
+            logger.error(f"Error adding bar chart to PDF: {e}")
+    
+    # Add time series chart if available
+    if report_data['time_series_chart_id']:
+        try:
+            time_series_data = mongo.db.images.find_one({'_id': ObjectId(report_data['time_series_chart_id'])})
+            if time_series_data and 'image' in time_series_data:
+                img_data = time_series_data['image']
+                img_stream = io.BytesIO(img_data)
+                img = Image(img_stream, width=400, height=300)
+                elements.append(Paragraph("Traffic Over Time Chart", h2_style))
+                elements.append(img)
+        except Exception as e:
+            logger.error(f"Error adding time series chart to PDF: {e}")
+    
+    # Build the PDF
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+def generate_report_data(packets):
+    """
+    Generates report data from the analyzed packets.
+
+    Args:
+        packets (list): A list of packet dictionaries.
+
+    Returns:
+        dict: A dictionary containing report data like packet counts,
+              protocol distribution, etc.
+    """
+    logger.info("Starting to generate report data...")
+    
+    if not packets:
+        # Return a minimal report structure if no packets are available
+        logger.warning("No packets available for report generation")
+        return {
+            'total_packets': 0,
+            'protocol_counts': {},
+            'top_source_ips': {},
+            'top_dest_ips': {},
+            'pie_chart_id': None,
+            'bar_chart_id': None,
+            'time_series_chart_id': None
+        }
+    
+    total_packets = len(packets)
+    logger.info(f"Processing {total_packets} packets for report")
+    
+    # Protocol counts
+    protocol_counts = {}
+    for packet in packets:
+        protocol = packet.get('protocol', 'Unknown')
+        protocol_counts[protocol] = protocol_counts.get(protocol, 0) + 1
+    
+    # Top source IPs
+    source_ips = {}
+    for packet in packets:
+        source_ip = packet.get('source_ip', 'Unknown')
+        if source_ip != 'N/A' and source_ip != 'Unknown':
+            source_ips[source_ip] = source_ips.get(source_ip, 0) + 1
+    
+    # Top destination IPs
+    dest_ips = {}
+    for packet in packets:
+        dest_ip = packet.get('destination_ip', 'Unknown')
+        if dest_ip != 'N/A' and dest_ip != 'Unknown':
+            dest_ips[dest_ip] = dest_ips.get(dest_ip, 0) + 1
+    
+    # Generate charts
+    logger.info("Generating protocol pie chart...")
+    pie_chart_id = generate_protocol_pie_chart(packets)
+    
+    logger.info("Generating top ports bar chart...")
+    bar_chart_id = generate_top_ports_bar_chart(packets)
+    
+    logger.info("Generating traffic time series chart...")
+    time_series_chart_id = generate_traffic_time_series_chart(packets)
+    
+    # Sort the IP dictionaries by count (descending) and take top 10
+    top_source_ips = dict(sorted(source_ips.items(), key=lambda x: x[1], reverse=True)[:10])
+    top_dest_ips = dict(sorted(dest_ips.items(), key=lambda x: x[1], reverse=True)[:10])
+    
+    logger.info("Report data generation complete")
+    
+    return {
+        'total_packets': total_packets,
+        'protocol_counts': protocol_counts,
+        'top_source_ips': top_source_ips,
+        'top_dest_ips': top_dest_ips,
+        'pie_chart_id': pie_chart_id,
+        'bar_chart_id': bar_chart_id,
+        'time_series_chart_id': time_series_chart_id
+    }
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5002)
